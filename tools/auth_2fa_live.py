@@ -913,51 +913,90 @@ def authorize_account(
         _require_ok(workspace_response, "workspace 选择失败")
 
         workspace_data = _safe_json(workspace_response)
-        org_page_url = urllib.parse.urljoin(
-            AUTH_BASE_URL,
-            str(workspace_data.get("continue_url") or "/sign-in-with-chatgpt/codex/organization"),
-        )
-        org_page = session.get(org_page_url, allow_redirects=False, timeout=20, verify=True)
-        _push_log(logs, _response_entry("organization_page", org_page), quiet=quiet, include_secrets=include_secrets, log_fn=log_fn)
+        continue_url = str(workspace_data.get("continue_url") or "").strip()
+        # Some accounts (e.g. ChatGPT without API orgs) skip organization
+        # selection and return an oauth2/auth continue_url directly.
+        if continue_url and (
+            "oauth2/auth" in continue_url
+            or "login_verifier=" in continue_url
+            or continue_url.startswith("http://localhost")
+            or "/auth/callback" in continue_url
+        ):
+            _push_log(
+                logs,
+                {
+                    "step": "organization_skipped",
+                    "ts": now_rfc3339(),
+                    "reason": "workspace continue_url already points to oauth callback chain",
+                    "continue_url": continue_url[:200],
+                },
+                quiet=quiet,
+                include_secrets=include_secrets,
+                log_fn=log_fn,
+            )
+            next_url = continue_url
+        else:
+            org_page_url = urllib.parse.urljoin(
+                AUTH_BASE_URL,
+                continue_url or "/sign-in-with-chatgpt/codex/organization",
+            )
+            org_page = session.get(org_page_url, allow_redirects=False, timeout=20, verify=True)
+            _push_log(logs, _response_entry("organization_page", org_page), quiet=quiet, include_secrets=include_secrets, log_fn=log_fn)
 
-        orgs = ((workspace_data.get("data") or {}).get("orgs") or []) if isinstance(workspace_data, dict) else []
-        if not orgs:
-            raise RuntimeError("workspace 返回里没有 orgs")
-        org = orgs[0] or {}
-        org_id = str(org.get("id") or "").strip()
-        if not org_id:
-            raise RuntimeError("org_id 为空")
-        body: dict[str, str] = {"org_id": org_id}
-        projects = org.get("projects") or []
-        if projects:
-            project_id = str((projects[0] or {}).get("id") or "").strip()
-            if project_id:
-                body["project_id"] = project_id
+            orgs = ((workspace_data.get("data") or {}).get("orgs") or []) if isinstance(workspace_data, dict) else []
+            if not orgs:
+                # Fallback: still try following continue_url if present
+                if continue_url:
+                    _push_log(
+                        logs,
+                        {
+                            "step": "organization_fallback",
+                            "ts": now_rfc3339(),
+                            "reason": "no orgs in workspace payload; following continue_url",
+                        },
+                        quiet=quiet,
+                        include_secrets=include_secrets,
+                        log_fn=log_fn,
+                    )
+                    next_url = continue_url
+                else:
+                    raise RuntimeError("workspace 返回里没有 orgs")
+            else:
+                org = orgs[0] or {}
+                org_id = str(org.get("id") or "").strip()
+                if not org_id:
+                    raise RuntimeError("org_id 为空")
+                body: dict[str, str] = {"org_id": org_id}
+                projects = org.get("projects") or []
+                if projects:
+                    project_id = str((projects[0] or {}).get("id") or "").strip()
+                    if project_id:
+                        body["project_id"] = project_id
 
-        organization_response = session.post(
-            ORGANIZATION_SELECT_URL,
-            headers=_make_json_headers(
-                referer=org_page_url,
-            ),
-            json=body,
-            timeout=20,
-            verify=True,
-        )
-        _push_log(
-            logs,
-            _response_entry("organization_select", organization_response, org_id=org_id, project_id=body.get("project_id", "")),
-            quiet=quiet,
-            include_secrets=include_secrets,
-            log_fn=log_fn,
-        )
-        _require_ok(organization_response, "组织选择失败")
+                organization_response = session.post(
+                    ORGANIZATION_SELECT_URL,
+                    headers=_make_json_headers(
+                        referer=org_page_url,
+                    ),
+                    json=body,
+                    timeout=20,
+                    verify=True,
+                )
+                _push_log(
+                    logs,
+                    _response_entry("organization_select", organization_response, org_id=org_id, project_id=body.get("project_id", "")),
+                    quiet=quiet,
+                    include_secrets=include_secrets,
+                    log_fn=log_fn,
+                )
+                _require_ok(organization_response, "组织选择失败")
 
-        organization_data = _safe_json(organization_response)
-        next_url = str(
-            organization_data.get("continue_url")
-            or ((organization_data.get("page") or {}).get("payload") or {}).get("url")
-            or org_page_url
-        ).strip()
+                organization_data = _safe_json(organization_response)
+                next_url = str(
+                    organization_data.get("continue_url")
+                    or ((organization_data.get("page") or {}).get("payload") or {}).get("url")
+                    or org_page_url
+                ).strip()
         callback_url = _follow_callback_chain(
             session,
             urllib.parse.urljoin(AUTH_BASE_URL, next_url),
