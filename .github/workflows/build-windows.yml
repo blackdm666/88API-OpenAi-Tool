@@ -1,0 +1,45 @@
+name: Build Windows exe
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [build-windows-exe]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+      - name: Build
+        run: python build.py --clean --name OpenAI-Token-Manager --entry-point main.py
+      - name: Stage zip
+        shell: bash
+        run: |
+          set -euo pipefail
+          ls -la dist || true
+          mkdir -p release
+          if [ -f dist/OpenAI-Token-Manager.exe ]; then
+            cp dist/OpenAI-Token-Manager.exe release/
+            [ -f 说明文档.md ] && cp 说明文档.md release/ || true
+            [ -f README.md ] && cp README.md release/ || true
+          else
+            find dist -maxdepth 2 -type f | head -50
+            cp -r dist/* release/ || true
+          fi
+          cd release
+          powershell -Command "Compress-Archive -Path * -DestinationPath ../OpenAI-Token-Manager-win64-patched.zip -Force"
+          ls -la ..
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenAI-Token-Manager-win64-patched
+          path: OpenAI-Token-Manager-win64-patched.zip
+          if-no-files-found: error
