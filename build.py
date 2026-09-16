@@ -91,21 +91,71 @@ def ensure_icon(icon_png: Path, icon_ico: Path) -> Path:
 
 def locate_tk_assets() -> dict[str, Path]:
     env_root = Path(sys.executable).resolve().parent
-    candidates = {
-        "tcl_dll": env_root / "Library" / "bin" / "tcl86t.dll",
-        "tk_dll": env_root / "Library" / "bin" / "tk86t.dll",
-        "tcl_lib": env_root / "Library" / "lib" / "tcl8.6",
-        "tk_lib": env_root / "Library" / "lib" / "tk8.6",
-    }
-    missing = [name for name, path in candidates.items() if not path.exists()]
-    if missing:
-        raise FileNotFoundError(f"未找到 Tk 运行时资源: {', '.join(missing)}")
-    return candidates
+    layouts = [
+        {  # Conda / Miniconda
+            "tcl_dll": env_root / "Library" / "bin" / "tcl86t.dll",
+            "tk_dll": env_root / "Library" / "bin" / "tk86t.dll",
+            "tcl_lib": env_root / "Library" / "lib" / "tcl8.6",
+            "tk_lib": env_root / "Library" / "lib" / "tk8.6",
+        },
+        {  # Official CPython Windows (actions/setup-python)
+            "tcl_dll": env_root / "DLLs" / "tcl86t.dll",
+            "tk_dll": env_root / "DLLs" / "tk86t.dll",
+            "tcl_lib": env_root / "tcl" / "tcl8.6",
+            "tk_lib": env_root / "tcl" / "tk8.6",
+        },
+    ]
+    errors: list[str] = []
+    for candidates in layouts:
+        missing = [name for name, path in candidates.items() if not path.exists()]
+        if not missing:
+            log(f"Tk assets: {candidates['tcl_dll'].parent}")
+            return candidates
+        errors.append(", ".join(f"{name} missing ({candidates[name]})" for name in missing))
+
+    # Fallback: ask tkinter where libraries live, then search nearby for DLLs.
+    try:
+        import tkinter
+
+        root = tkinter.Tk()
+        root.withdraw()
+        tcl_lib = Path(root.tk.eval("set tcl_library"))
+        tk_lib = Path(root.tk.eval("set tk_library"))
+        root.destroy()
+        search_dirs = [
+            env_root / "DLLs",
+            env_root / "Library" / "bin",
+            env_root,
+            Path(sys.base_prefix) / "DLLs",
+            Path(sys.base_prefix) / "Library" / "bin",
+        ]
+        tcl_dll = next((p / "tcl86t.dll" for p in search_dirs if (p / "tcl86t.dll").exists()), None)
+        tk_dll = next((p / "tk86t.dll" for p in search_dirs if (p / "tk86t.dll").exists()), None)
+        if tcl_dll and tk_dll and tcl_lib.exists() and tk_lib.exists():
+            found = {
+                "tcl_dll": tcl_dll,
+                "tk_dll": tk_dll,
+                "tcl_lib": tcl_lib,
+                "tk_lib": tk_lib,
+            }
+            log(f"Tk assets via tkinter: {tcl_dll.parent}")
+            return found
+        errors.append(f"tkinter fallback incomplete tcl_dll={tcl_dll} tk_dll={tk_dll} tcl_lib={tcl_lib} tk_lib={tk_lib}")
+    except Exception as exc:
+        errors.append(f"tkinter fallback failed: {exc}")
+
+    raise FileNotFoundError("未找到 Tk 运行时资源: " + " | ".join(errors))
 
 
 def locate_optional_runtime_dlls() -> list[Path]:
     env_root = Path(sys.executable).resolve().parent
-    dll_dir = env_root / "Library" / "bin"
+    dll_dirs = [
+        env_root / "Library" / "bin",
+        env_root / "DLLs",
+        env_root,
+        Path(sys.base_prefix) / "Library" / "bin",
+        Path(sys.base_prefix) / "DLLs",
+    ]
     names = [
         "liblzma.dll",
         "libbz2.dll",
@@ -115,7 +165,15 @@ def locate_optional_runtime_dlls() -> list[Path]:
         "zlib.dll",
         "zlib1.dll",
     ]
-    return [dll_dir / name for name in names if (dll_dir / name).exists()]
+    found: list[Path] = []
+    seen: set[str] = set()
+    for dll_dir in dll_dirs:
+        for name in names:
+            path = dll_dir / name
+            if path.exists() and name not in seen:
+                found.append(path)
+                seen.add(name)
+    return found
 
 
 def write_tk_runtime_hook() -> Path:
