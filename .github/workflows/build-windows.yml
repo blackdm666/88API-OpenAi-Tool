@@ -8,6 +8,9 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    env:
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -19,7 +22,12 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
       - name: Build
-        run: python build.py --clean --name OpenAI-Token-Manager --entry-point main.py
+        shell: pwsh
+        run: |
+          chcp 65001 | Out-Null
+          $env:PYTHONIOENCODING = "utf-8"
+          $env:PYTHONUTF8 = "1"
+          python build.py --clean --name OpenAI-Token-Manager --entry-point main.py
       - name: Stage zip
         shell: bash
         run: |
@@ -30,13 +38,20 @@ jobs:
             cp dist/OpenAI-Token-Manager.exe release/
             [ -f 说明文档.md ] && cp 说明文档.md release/ || true
             [ -f README.md ] && cp README.md release/ || true
+            echo "commit=$(git rev-parse --short HEAD)" > release/BUILD_INFO.txt
+            echo "includes: PR#1 organization_skipped fix" >> release/BUILD_INFO.txt
           else
-            find dist -maxdepth 2 -type f | head -50
-            cp -r dist/* release/ || true
+            find dist -maxdepth 3 -type f | head -80
+            # onedir layout
+            if [ -d dist/OpenAI-Token-Manager ]; then
+              cp -r dist/OpenAI-Token-Manager release/
+            else
+              cp -r dist/* release/ || true
+            fi
           fi
           cd release
           powershell -Command "Compress-Archive -Path * -DestinationPath ../OpenAI-Token-Manager-win64-patched.zip -Force"
-          ls -la ..
+          ls -lah ..
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
