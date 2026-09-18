@@ -160,9 +160,9 @@ def account_identity(record: dict[str, Any]) -> tuple[str, str]:
 
 
 def match_remote(
-    local: dict[str, Any], remotes: list[dict[str, Any]]
+    local: dict[str, Any], remotes: list[dict[str, Any]], *, allow_rebind: bool = False
 ) -> dict[str, Any] | None:
-    """Require one OAuth owner; never choose an arbitrary same-email workspace."""
+    """Require one OAuth owner; optionally accept a recreated same-identity row."""
     email, identity = account_identity(local)
     matches = []
     same_email = []
@@ -191,6 +191,15 @@ def match_remote(
     remote = matches[0]
     binding = (local.get("sub2api_recovery") or {}).get("remote_id")
     if binding and int(binding) != int(remote["id"]):
+        # Sub2API can delete and recreate a row while preserving the OAuth
+        # owner. Automatic recovery may follow that replacement only when the
+        # old bound row is absent and the stable ChatGPT account identity also
+        # matches. Manual upload keeps the strict binding check by default.
+        bound_exists = any(str(row.get("id")) == str(binding) for row in remotes)
+        local_identity = account_identity(local)[1]
+        remote_identity = account_identity(remote)[1]
+        if allow_rebind and not bound_exists and local_identity and remote_identity == local_identity:
+            return remote
         raise ValueError("远端账号绑定已变化，请重新开启该账号的监控")
     return remote
 

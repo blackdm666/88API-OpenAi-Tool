@@ -168,7 +168,7 @@ def recovery_cycle(store, settings, *, log_fn=None, cancelled=lambda: False):
         try:
             if state.get('server') and state['server'] != server:
                 raise NeedsUser('监控绑定的服务器与当前地址不同，请重新开启账号监控')
-            remote = match_remote(local, remotes)
+            remote = match_remote(local, remotes, allow_rebind=True)
             result['checked'] += 1
             if not remote:
                 state.update(status='未上传/未匹配', message='远端不存在唯一匹配账号，不自动创建',

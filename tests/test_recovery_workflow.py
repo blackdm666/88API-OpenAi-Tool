@@ -69,6 +69,16 @@ class WorkflowTest(unittest.TestCase):
         self.assertTrue(saved['sub2api_recovery']['auto_enrolled'])
         self.auth.assert_called_once()
 
+    def test_recreated_remote_row_is_rebound_before_recovery(self):
+        local = self.store.load_all()[0]
+        local['sub2api_recovery']['remote_id'] = 41
+        self.store.save_record(local, filename=local.get('_filename'))
+        result = recovery_cycle(self.store, self.settings)
+        self.assertEqual(result['recovered'], 1)
+        saved = self.store.load_all()[0]
+        self.assertEqual(saved['sub2api_recovery']['remote_id'], 42)
+        self.auth.assert_called_once()
+
     def test_redacted_list_fetches_only_target_credentials_before_recovery(self):
         full = deepcopy(self.remote)
         redacted = deepcopy(self.remote)

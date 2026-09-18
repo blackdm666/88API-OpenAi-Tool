@@ -51,6 +51,20 @@ class AuthPreflightTest(unittest.TestCase):
         self.assertFalse(eligible)
         self.assertIn('已有新凭据', skipped[0]['reason'])
 
+    def test_recreated_remote_same_identity_is_checked_against_new_id(self):
+        local = {
+            'email': 'a@example.test',
+            'account_id': 'workspace',
+            'sub2api_recovery': {'remote_id': 41},
+        }
+        row = remote(status='active', credentials={
+            'email': 'a@example.test',
+            'chatgpt_account_id': 'workspace',
+        })
+        eligible, skipped = plan_authorization([account()], [local], [row])
+        self.assertFalse(eligible)
+        self.assertIn('正常', skipped[0]['reason'])
+
     def test_checked_batch_only_passes_unhealthy_accounts_to_runner(self):
         cfg=default_config();cfg['integrations']['sub2api']['api_url']='https://sub.test'
         raw='\n'.join(account(email).raw_line for email in ('a@example.test','b@example.test'))

@@ -169,6 +169,15 @@ class Sub2APITest(Fixture, unittest.TestCase):
             match_remote(self.local, [{**self.remote, "parent_account_id": 1}])
         )
 
+    def test_automatic_recovery_rebinds_deleted_remote_row_same_identity(self):
+        local = {**self.local, "sub2api_recovery": {"remote_id": 41}}
+        recreated = {**self.remote, "id": 42, "status": "active"}
+        self.assertEqual(
+            match_remote(local, [recreated], allow_rebind=True)["id"], 42
+        )
+        with self.assertRaises(ValueError):
+            match_remote(local, [recreated])
+
     def test_429_and_temporary_401_are_not_permanent_errors(self):
         self.assertEqual(
             auth_failure_kind({**self.remote, "error_message": "429 rate limited"}), ""

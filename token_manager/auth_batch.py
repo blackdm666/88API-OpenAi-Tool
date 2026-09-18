@@ -30,7 +30,7 @@ def plan_authorization(accounts, local_records, remotes):
             reason = '本地存在重复身份，需人工核对'
         if not reason:
             try:
-                remote = match_remote(local, remotes)
+                remote = match_remote(local, remotes, allow_rebind=True)
             except ValueError as exc:
                 reason = str(exc)
             else:
