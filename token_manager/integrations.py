@@ -327,7 +327,7 @@ def fetch_sub2api_accounts(
             params={
                 "page": page,
                 "page_size": page_size,
-                "sort_by": "name",
+                "sort_by": "id",
                 "sort_order": "asc",
                 **query_filters,
             },

@@ -68,3 +68,19 @@ def usage_details(usage):
                 f"  窗口请求 {stats.get('requests', '未知')} 次；Token {stats.get('tokens', '未知')}；账号费用 ${stats.get('cost', '未知')}"
             )
     return "\n".join(lines)
+
+
+def sort_account_rows(records, column='id', descending=False, usage_reader=snapshot_usage):
+    known, missing = [], []
+    for record in records:
+        if column == 'id': value=int(record.get('id') or 0)
+        elif column in ('quota5','quota7'):
+            text=quota_cell(usage_reader(record),'five_hour' if column=='quota5' else 'seven_day')
+            value=float(text[:-1]) if text.endswith('%') else None
+        elif column == 'email': value=str(record.get('name') or record.get('email') or '').casefold()
+        elif column == 'groups': value=', '.join(record.get('group_names') or []).casefold()
+        elif column == 'error': value=str(record.get('error_message') or '').casefold()
+        else: value=str(record.get(column) or '').casefold()
+        (missing if value is None else known).append((value,record))
+    known.sort(key=lambda pair:(pair[0],int(pair[1].get('id') or 0)),reverse=descending)
+    return [r for _,r in known+missing]

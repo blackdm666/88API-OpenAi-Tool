@@ -42,6 +42,9 @@ class GUICommonMixin:
         except tk.TclError:
             pass
 
+        style.layout('Workspace.TNotebook.Tab', [])
+        style.configure('Nav.TButton',padding=(5,4),font=('Microsoft YaHei UI',9),width=0)
+        style.configure('ActiveNav.TButton',padding=(5,4),font=('Microsoft YaHei UI',9,'bold'),width=0,foreground='#2563eb')
         base_font = ("Microsoft YaHei UI", 10)
         bold_font = ("Microsoft YaHei UI", 10, "bold")
         hero_font = ("Microsoft YaHei UI", 21, "bold")

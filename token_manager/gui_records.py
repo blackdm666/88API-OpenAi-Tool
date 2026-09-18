@@ -20,7 +20,7 @@ class GUIRecordsMixin:
         for item in self.token_tree.get_children():
             self.token_tree.delete(item)
         all_records = self.store.load_all()
-        rank={r["id"]:i for i,r in enumerate(self.sub2api_records)}
+        rank={r["id"]:i for i,r in enumerate(self.sorted_sub2api_records())}
         def remote_order(record):
             remote=self.local_remote_record(record)
             return (rank.get(remote["id"],len(rank)) if remote else len(rank),str(record.get("email","")).casefold())
@@ -95,17 +95,18 @@ class GUIRecordsMixin:
             "team": 0,
             "plus": 0,
             "free": 0,
+            "pro": 0,
             "other": 0,
         }
         for record in all_records:
             plan = str(record.get("_plan") or "unknown").strip().lower()
-            if plan in {"team", "plus", "free"}:
+            if plan in {"team", "plus", "free", "pro"}:
                 totals[plan] += 1
             else:
                 totals["other"] += 1
-        self.stats_var.set(
-            f"全部 {totals['all']}  当前 {totals['visible']}  Team {totals['team']}  Plus {totals['plus']}  Free {totals['free']}  其他 {totals['other']}"
-        )
+        counts=[f"全部 {totals['all']}",f"当前 {totals['visible']}"]
+        counts.extend(f'{label} {totals[key]}' for key,label in [('team','Team'),('plus','Plus'),('pro','Pro'),('free','Free'),('other','其他')] if totals[key])
+        self.stats_var.set(' · '.join(counts))
 
     def organize_output_dirs(self) -> None:
         self.save_settings(reload_tokens=False, notify=False)

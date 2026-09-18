@@ -66,12 +66,21 @@ class LayoutTest(unittest.TestCase):
                         ),
                         (17, 0, "device"),
                     )
-                    app.toggle_log_panel()
-                    app.toggle_log_panel()
-                    root.update_idletasks()
                     self.assertIn(str(app.log_panel), app.main_vertical_pane.panes())
-                    self.assertTrue(app.log_expanded)
-                    self.assertTrue(app.info_notebook.winfo_ismapped())
+                    self.assertFalse(hasattr(app,'info_notebook'))
+                    self.assertTrue(app.log_text.winfo_ismapped())
+                    self.assertTrue(app.account_heading_stats.winfo_ismapped())
+                    # Header command performs a real numeric toggle, not string sorting.
+                    root.tk.call(app.sub2api_tree.heading('id','command'))
+                    self.assertEqual(app.filtered_sub2api_records[0]['id'],16)
+                    root.tk.call(app.sub2api_tree.heading('id','command'))
+                    self.assertEqual(app.filtered_sub2api_records[0]['id'],1)
+                    app.sub2api_records[0]['extra']={'codex_5h_used_percent':25,'codex_7d_used_percent':80}
+                    app.populate_sub2api_tree()
+                    root.update_idletasks()
+                    bars=[b for b in app.sub2api_tree._bar_widgets if b.winfo_ismapped()]
+                    self.assertTrue(bars)
+                    self.assertTrue(any(b.find_all() for b in bars))
                     app.open_sub2api_upload_settings()
                     root.update_idletasks()
                     dialogs = [
@@ -123,7 +132,10 @@ class LayoutTest(unittest.TestCase):
                         root.update()
                         app._apply_initial_pane_layout()
                         root.update_idletasks()
-                        self.assertGreaterEqual(app.sub2api_tree.winfo_height(), 180)
+                        self.assertGreaterEqual(app.sub2api_tree.winfo_height(), 140)
+                        self.assertGreaterEqual(app.log_text.winfo_height(),100)
+                        self.assertLessEqual(app.log_text.winfo_rooty()+app.log_text.winfo_height(),root.winfo_rooty()+root.winfo_height())
+                        self.assertGreaterEqual(app.workspace_actions.winfo_x(), app.workspace_nav.winfo_reqwidth())
                         self.assertTrue(
                             app.sub2api_tree.bbox(app.sub2api_tree.get_children()[0])
                         )

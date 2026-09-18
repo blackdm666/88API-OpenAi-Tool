@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from typing import Any
+import threading
+import time
 
 import tkinter as tk
 from tkinter import messagebox, ttk
 from .gui_widgets import CheckList
-from .integrations import fetch_sub2api_usage
-from .usage_display import snapshot_usage, quota_cell, usage_details
+from .integrations import fetch_sub2api_usage, fetch_sub2api_accounts
+from .usage_display import snapshot_usage, quota_cell, sort_account_rows
 from .sub2api_policy import normalize_server_url, match_remote
 
 from .services import (
@@ -19,8 +21,19 @@ from .services import (
 
 
 class GUISub2APIMixin:
+    def initial_remote_load(self):
+        cfg=(self.current_settings().get('integrations') or {}).get('sub2api') or {}
+        if cfg.get('api_url') and (cfg.get('api_key') or cfg.get('access_token') or (cfg.get('admin_email') and cfg.get('admin_password'))) and not self.is_running() and not self.auto_refresh_running:
+            self.refresh_sub2api_accounts()
+
     def update_recovery_snapshot(self, records):
         self.sub2api_records = records
+        now=time.time()
+        for account_id in list(self.sub2api_usage_cache):
+            if now-self.sub2api_usage_cache_time.get(account_id,0)>=60:
+                self.sub2api_usage_cache.pop(account_id,None)
+                self.sub2api_usage_cache_time.pop(account_id,None)
+        self.usage_sync_var.set("服务器快照 · 同步 " + time.strftime("%H:%M:%S") + " · 每60秒")
         self.sub2api_index = self._build_sub2api_email_index(records)
         self.populate_sub2api_tree()
 
@@ -113,12 +126,14 @@ class GUISub2APIMixin:
 
     def populate_sub2api_tree(self) -> None:
         selected = set(self.sub2api_tree.selection())
+        xview=self.sub2api_tree.xview()[0]
+        yview=self.sub2api_tree.yview()[0]
         for item in self.sub2api_tree.get_children():
             self.sub2api_tree.delete(item)
 
         self.sub2api_row_index = {}
         self.sub2api_invalidated_row_index = {}
-        self.filtered_sub2api_records = self.filter_sub2api_records(self.sub2api_records)
+        self.filtered_sub2api_records = self.filter_sub2api_records(self.sorted_sub2api_records())
         self.invalidated_sub2api_records = [record for record in self.filtered_sub2api_records if is_sub2api_invalidated(record)]
         self._update_sub2api_group_filter_values()
 
@@ -166,13 +181,13 @@ class GUISub2APIMixin:
             if iid in selected:
                 self.sub2api_tree.selection_add(iid)
 
-        self.sub2api_stats_var.set(f'显示 {len(self.filtered_sub2api_records)} / {len(self.sub2api_records)} · 异常 {error_count} · 名称升序 · 双击看用量')
+        self.sub2api_stats_var.set(f'显示 {len(self.filtered_sub2api_records)} / {len(self.sub2api_records)} · 异常 {error_count} · {self.sort_description()}')
         self.sub2api_pool_stats_var.set(
             f"当前 {len(self.filtered_sub2api_records)}  Active {active_count}  Inactive {inactive_count}  Error {error_count}  停调度 {unschedulable_count}"
         )
         self.sub2api_invalidated_stats_var.set(f"失效记录 {len(self.invalidated_sub2api_records)}")
-        self.sub2api_tree.xview_moveto(0)
-        self.on_sub2api_selection_changed()
+        self.sub2api_tree.xview_moveto(xview)
+        self.sub2api_tree.yview_moveto(yview)
 
     @staticmethod
     def _build_sub2api_row_id(record: dict[str, Any], idx: int) -> str:
@@ -214,6 +229,8 @@ class GUISub2APIMixin:
                 return
             self.persist_runtime_settings(settings)
             self.sub2api_usage_cache.clear()
+            self.sub2api_usage_cache_time.clear()
+            self.usage_sync_var.set("服务器快照 · 同步 " + time.strftime("%H:%M:%S") + " · 每60秒")
             self.sub2api_snapshot_server=server
             self.sub2api_groups = result.get("groups", [])
             self.sub2api_records = result.get("records", [])
@@ -238,19 +255,68 @@ class GUISub2APIMixin:
         except ValueError:
             return None
 
-    def on_sub2api_selection_changed(self, _event=None):
-        rows=self.selected_sub2api_pool_records()
-        text=usage_details(self.usage_for_record(rows[0])) if rows else '双击远端账号查看用量明细'
-        self.sub2api_usage_text.configure(state=tk.NORMAL)
-        self.sub2api_usage_text.delete('1.0',tk.END)
-        self.sub2api_usage_text.insert('1.0',text)
-        self.sub2api_usage_text.configure(state=tk.DISABLED)
+    def sort_description(self):
+        labels={'id':'ID','email':'账号名称','groups':'分组','status':'状态','quota5':'5h已用','quota7':'7d已用','error':'错误'}
+        return labels[self.sub2api_sort_column]+('降序' if self.sub2api_sort_descending else '升序')
 
-    def show_selected_usage_details(self, _event=None):
-        self.on_sub2api_selection_changed()
-        if not self.log_expanded:
-            self.toggle_log_panel()
-        self.info_notebook.select(self.log_detail_tab)
+    def sorted_sub2api_records(self):
+        return sort_account_rows(self.sub2api_records,self.sub2api_sort_column,self.sub2api_sort_descending,self.usage_for_record)
+
+    def sort_sub2api_accounts(self,column):
+        if column==self.sub2api_sort_column:
+            self.sub2api_sort_descending=not self.sub2api_sort_descending
+        else:
+            self.sub2api_sort_column=column
+            self.sub2api_sort_descending=False
+        labels={'id':'ID','email':'账号名称','groups':'分组','status':'状态','quota5':'5h已用','quota7':'7d已用','error':'错误摘要'}
+        for key,label in labels.items():
+            arrow=(' ↓' if self.sub2api_sort_descending else ' ↑') if key==column else ''
+            self.sub2api_tree.heading(key,text=label+arrow)
+        self.populate_sub2api_tree()
+        self.reload_tokens(save_first=False)
+
+    def poll_remote_snapshot(self):
+        self.root.after(60000,self.poll_remote_snapshot)
+        if self.is_running() or self.auto_refresh_running or self._snapshot_inflight or not self.sub2api_records:
+            return
+        settings=self.current_settings()
+        try:
+            server=normalize_server_url(settings['integrations']['sub2api']['api_url'])
+        except ValueError:
+            return
+        if server!=self.sub2api_snapshot_server:
+            return
+        self._snapshot_inflight=True
+        def work():
+            try:
+                records=fetch_sub2api_accounts(settings,proxy_url=settings.get('http_proxy',''),filters={'platform':'openai'})
+                error=None
+            except Exception as exc:
+                records=[];error=exc
+            def done():
+                self._snapshot_inflight=False
+                if self.is_running() or self.auto_refresh_running:
+                    return
+                try:
+                    if normalize_server_url(self.current_settings()['integrations']['sub2api']['api_url'])!=server:
+                        return
+                except ValueError:
+                    return
+                if error is not None:
+                    self.usage_sync_var.set('服务器快照 · 自动同步失败，保留上次数据')
+                    return
+                now=time.time()
+                for account_id in list(self.sub2api_usage_cache):
+                    if now-self.sub2api_usage_cache_time.get(account_id,0)>=60:
+                        self.sub2api_usage_cache.pop(account_id,None)
+                        self.sub2api_usage_cache_time.pop(account_id,None)
+                self.update_recovery_snapshot(records)
+                self.reload_tokens(save_first=False)
+            try:
+                self.root.after(0,done)
+            except (RuntimeError,tk.TclError):
+                pass
+        threading.Thread(target=work,daemon=True).start()
 
     def refresh_sub2api_usage(self):
         rows=self.selected_sub2api_pool_records() or self.filtered_sub2api_records
@@ -271,6 +337,7 @@ class GUISub2APIMixin:
             return fetch_sub2api_usage(settings,ids,proxy_url=settings.get('http_proxy',''))
         def done(result):
             self.set_running(False,'用量更新完成')
+            self.usage_sync_var.set('用量读取 '+time.strftime('%H:%M:%S')+' · 快照每60秒同步')
             if result.get('error'):
                 messagebox.showerror('读取用量失败',result['error'])
                 return
@@ -287,6 +354,7 @@ class GUISub2APIMixin:
                         if isinstance(window,dict) and window.get('utilization')==0 and not window.get('resets_at') and f'codex_{short}_used_percent' not in (record.get('extra') or {}):
                             window['utilization']=None
                 self.sub2api_usage_cache[account_id]={'error':error} if error else data or {}
+                self.sub2api_usage_cache_time[account_id]=time.time()
             self.populate_sub2api_tree()
             self.reload_tokens(save_first=False)
             self.log(f"Sub2API用量读取 {len(ids)} 个，失败 {len(result.get('errors') or {})} 个；未强制探测")

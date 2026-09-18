@@ -4,11 +4,12 @@ import tkinter as tk
 from tkinter import scrolledtext, ttk
 
 from .constants import MAX_REFRESH_WORKERS, MAX_UPLOAD_WORKERS
+from .gui_widgets import UsageTreeview
 
 
 class GUILayoutMixin:
     def setup_ui(self) -> None:
-        shell = ttk.Frame(self.root, padding=(14, 14, 14, 12), style="Shell.TFrame")
+        shell = ttk.Frame(self.root, padding=(8, 6, 8, 6), style="Shell.TFrame")
         shell.pack(fill=tk.BOTH, expand=True)
 
         left, right, bottom = self._build_main_panes(shell)
@@ -31,17 +32,24 @@ class GUILayoutMixin:
         self.main_horizontal_pane = ttk.PanedWindow(top_host, orient=tk.HORIZONTAL)
         self.main_horizontal_pane.grid(row=0, column=0, sticky="nsew")
 
-        bottom = ttk.LabelFrame(self.main_vertical_pane, text="运行信息", padding=5, style="Card.TLabelframe")
-        bottom.configure(height=120)
+        bottom = ttk.Frame(self.main_vertical_pane, padding=0, style="Card.TFrame")
+        bottom.configure(height=170)
         self.log_panel = bottom
 
         left = ttk.LabelFrame(self.main_horizontal_pane, text="账号列表", padding=8, style="Card.TLabelframe")
-        right = ttk.LabelFrame(self.main_horizontal_pane, text="功能区", padding=8, style="Card.TLabelframe")
+        heading=ttk.Frame(left,style='Card.TFrame')
+        ttk.Label(heading,text='账号列表',style='Stats.TLabel').pack(side='left')
+        self.account_heading_stats=ttk.Label(heading,textvariable=self.stats_var,style='CardSubtle.TLabel',font=('Microsoft YaHei UI',9))
+        self.account_heading_stats.pack(side='left',padx=10)
+        left.configure(labelwidget=heading)
+        right = ttk.Frame(self.main_horizontal_pane, padding=(6,0,0,0), style="Card.TFrame")
         self.account_panel = left
         self.main_horizontal_pane.add(left, weight=1)
         self.main_horizontal_pane.add(right, weight=1)
         self.main_vertical_pane.add(top_host, weight=5)
         self.main_vertical_pane.add(bottom, weight=0)
+        self._layout_resize_pending = None
+        self.main_vertical_pane.bind("<Configure>", self._queue_layout_resize)
         return left, right, bottom
 
     def _apply_initial_pane_layout(self) -> None:
@@ -49,9 +57,9 @@ class GUILayoutMixin:
             self.root.update_idletasks()
             total_height = max(1, self.main_vertical_pane.winfo_height())
             total_width = max(1, self.main_horizontal_pane.winfo_width())
-            log_height = 165 if self.log_expanded else 58
+            log_height = max(125, min(200, int(total_height * 0.23)))
             if str(self.log_panel) in self.main_vertical_pane.panes():
-                self.main_vertical_pane.sashpos(0, max(420, total_height - log_height))
+                self.main_vertical_pane.sashpos(0, max(220, total_height - log_height))
             self.main_horizontal_pane.sashpos(0, total_width // 2)
         except (AttributeError, tk.TclError):
             return
@@ -119,7 +127,6 @@ class GUILayoutMixin:
         )
         status_combo.grid(row=0, column=5, sticky="ew", padx=3, pady=3)
         status_combo.bind("<<ComboboxSelected>>", lambda _e: self.reload_tokens(save_first=False))
-        ttk.Label(filter_frame, textvariable=self.stats_var, style="Stats.TLabel").grid(row=1, column=0, columnspan=6, sticky="w", padx=3, pady=(4, 0))
 
         list_frame = ttk.Frame(parent, style="Card.TFrame")
         list_frame.grid(row=3, column=0, sticky="nsew")
@@ -127,7 +134,7 @@ class GUILayoutMixin:
         list_frame.rowconfigure(0, weight=1)
 
         columns = ("email", "plan", "quota5", "quota7", "status", "remaining", "upload", "recovery")
-        self.token_tree = ttk.Treeview(list_frame, columns=columns, show="headings", selectmode="extended")
+        self.token_tree = UsageTreeview(list_frame, columns=columns, show="headings", selectmode="extended")
         self.token_tree.heading("email", text="邮箱")
         self.token_tree.heading("plan", text="标签")
         for key,label in [("quota5","5h已用"),("quota7","7d已用")]:
@@ -154,7 +161,16 @@ class GUILayoutMixin:
         self.token_tree.tag_configure("warning", foreground=self.palette["accent"])
 
     def _build_right_panel(self, parent) -> None:
-        self.right_notebook = ttk.Notebook(parent)
+        nav = ttk.Frame(parent, style='Card.TFrame')
+        nav.pack(fill=tk.X, pady=(0,5))
+        nav.columnconfigure(0,weight=1)
+        self.workspace_nav=ttk.Frame(nav,style='Card.TFrame')
+        self.workspace_nav.grid(row=0,column=0,sticky='w')
+        self.workspace_actions=ttk.Frame(nav,style='Card.TFrame')
+        self.workspace_actions.grid(row=0,column=1,sticky='e')
+        ttk.Button(self.workspace_actions,text='维护规则',command=self.show_maintenance_rules,style='Nav.TButton').pack(side='left',padx=2)
+        ttk.Button(self.workspace_actions,text='远端 / 双栏',command=self.toggle_account_panel,style='Nav.TButton').pack(side='left',padx=2)
+        self.right_notebook = ttk.Notebook(parent,style='Workspace.TNotebook')
         self.right_notebook.pack(fill=tk.BOTH, expand=True)
 
         self.detail_tab = ttk.Frame(self.right_notebook, padding=8, style="Card.TFrame")
@@ -178,6 +194,17 @@ class GUILayoutMixin:
         self._build_sub2api_tab(self.sub2api_tab)
         self._build_settings_tab(self.settings_tab)
         self.right_notebook.select(self.sub2api_tab)
+        self.workspace_buttons={}
+        for tab,label in [(self.detail_tab,'详情'),(self.auth_tab,'授权'),(self.auth2fa_tab,'2FA'),(self.convert_tab,'导入导出'),(self.sub2api_tab,'Sub2API'),(self.settings_tab,'设置')]:
+            button=ttk.Button(self.workspace_nav,text=label,command=lambda t=tab:self.right_notebook.select(t),style='Nav.TButton')
+            button.pack(side='left',padx=1)
+            self.workspace_buttons[str(tab)]=button
+        def mark_tab(event=None):
+            current=self.right_notebook.select()
+            for tab,button in self.workspace_buttons.items():
+                button.configure(style='ActiveNav.TButton' if tab==current else 'Nav.TButton')
+        self.right_notebook.bind('<<NotebookTabChanged>>',mark_tab)
+        mark_tab()
 
     def _build_detail_tab(self, parent) -> None:
         parent.columnconfigure(0, weight=1)
@@ -323,7 +350,7 @@ class GUILayoutMixin:
     def _build_sub2api_tab(self, parent) -> None:
         parent.columnconfigure(0, weight=1)
         parent.rowconfigure(2, weight=1)
-        self.sub2api_stats_var = tk.StringVar(value='未加载 · 名称升序（与Sub2API默认一致）')
+        self.sub2api_stats_var = tk.StringVar(value='未加载 · ID升序')
         self.sub2api_pool_stats_var = tk.StringVar(value='')
         self.sub2api_invalidated_stats_var = tk.StringVar(value='')
         toolbar = ttk.Frame(parent, style='Card.TFrame')
@@ -366,16 +393,14 @@ class GUILayoutMixin:
         table.grid(row=2,column=0,sticky='nsew')
         table.columnconfigure(0,weight=1);table.rowconfigure(0,weight=1)
         columns=('id','email','groups','status','quota5','quota7','error')
-        self.sub2api_tree=ttk.Treeview(table,columns=columns,show='headings',selectmode='extended',height=12)
+        self.sub2api_tree=UsageTreeview(table,columns=columns,show='headings',selectmode='extended',height=12)
         for key,label,width in [('id','ID',45),('email','账号名称',180),('groups','分组',120),('status','状态',70),('quota5','5h已用',75),('quota7','7d已用',75),('error','错误摘要',180)]:
-            self.sub2api_tree.heading(key,text=label)
+            self.sub2api_tree.heading(key,text=label+(' ↑' if key=='id' else ''),command=lambda k=key:self.sort_sub2api_accounts(k))
             self.sub2api_tree.column(key,width=width,minwidth=40,stretch=key in ('email','groups','error'))
         y=ttk.Scrollbar(table,orient='vertical',command=self.sub2api_tree.yview)
         x=ttk.Scrollbar(table,orient='horizontal',command=self.sub2api_tree.xview)
         self.sub2api_tree.configure(yscrollcommand=y.set,xscrollcommand=x.set)
         self.sub2api_tree.grid(row=0,column=0,sticky='nsew');y.grid(row=0,column=1,sticky='ns');x.grid(row=1,column=0,sticky='ew')
-        self.sub2api_tree.bind('<<TreeviewSelect>>',self.on_sub2api_selection_changed)
-        self.sub2api_tree.bind('<Double-1>',self.show_selected_usage_details)
         self.sub2api_tree.tag_configure('error',foreground='#a94438')
         self.sub2api_tree.tag_configure('invalidated',foreground='#a94438')
         self.sub2api_tree.tag_configure('warning',foreground=self.palette['accent'])
@@ -383,6 +408,7 @@ class GUILayoutMixin:
         footer.grid(row=3,column=0,sticky='ew',pady=(5,0))
         footer.columnconfigure(0,weight=1)
         ttk.Label(footer,textvariable=self.sub2api_stats_var,style='CardSubtle.TLabel').grid(row=0,column=0,sticky='w')
+        ttk.Label(footer,textvariable=self.usage_sync_var,style='CardSubtle.TLabel').grid(row=1,column=0,sticky='w')
         ttk.Button(footer,text='重置筛选',command=self.clear_sub2api_filters).grid(row=0,column=1,sticky='e')
 
     def _build_settings_tab(self, parent) -> None:
@@ -437,42 +463,28 @@ class GUILayoutMixin:
         ttk.Button(sub2api_frame, text="保存设置", command=self.save_settings).pack(anchor=tk.E)
 
     def _build_log_panel(self, parent) -> None:
-        self.log_expanded = True
-        toolbar = ttk.Frame(parent, style='Card.TFrame')
-        toolbar.pack(fill=tk.X, pady=(0, 4))
-        toolbar.columnconfigure(0, weight=1)
-        ttk.Label(toolbar, textvariable=self.status_var, style='Card.TLabel', wraplength=550).grid(row=0, column=0, sticky='w')
-        for column, (label, command) in enumerate([
-            ('展开 / 收起信息', self.toggle_log_panel),
-            ('自动维护规则', self.show_maintenance_rules),
-            ('专注远端 / 双栏', self.toggle_account_panel),
-            ('清空日志', self.clear_logs),
-        ], start=1):
-            ttk.Button(toolbar, text=label, command=command).grid(row=0,column=column,padx=3)
-        self.info_notebook = ttk.Notebook(parent)
-        self.info_notebook.pack(fill=tk.BOTH, expand=True)
-        log_tab = ttk.Frame(self.info_notebook)
-        self.log_detail_tab = ttk.Frame(self.info_notebook)
-        self.info_notebook.add(log_tab, text='运行日志')
-        self.info_notebook.add(self.log_detail_tab, text='用量明细')
         self.log_text = scrolledtext.ScrolledText(
-            log_tab, height=4, wrap=tk.WORD, font=('Consolas',9),
+            parent, height=7, wrap=tk.WORD, font=('Consolas',9),
             bg=self.palette['card'], fg=self.palette['text'], relief='flat',
-            insertbackground=self.palette['text'], highlightthickness=0)
+            insertbackground=self.palette['text'], highlightthickness=1,
+            highlightbackground=self.palette['border'], padx=6,pady=5)
         self.log_text.pack(fill=tk.BOTH, expand=True)
-        self.sub2api_usage_text=scrolledtext.ScrolledText(self.log_detail_tab,height=4,wrap=tk.WORD,font=("Consolas",9),relief="flat")
-        self.sub2api_usage_text.pack(fill=tk.BOTH,expand=True)
-        self.sub2api_usage_text.configure(state=tk.DISABLED)
+        self.clear_log_button=ttk.Button(parent,text='清空日志',command=self.clear_logs,style='Nav.TButton')
+        self.clear_log_button.place(relx=1,x=-24,y=4,anchor='ne')
 
-    def toggle_log_panel(self):
-        self.log_expanded = not self.log_expanded
-        if self.log_expanded:
-            self.info_notebook.pack(fill=tk.BOTH, expand=True)
-        else:
-            self.info_notebook.pack_forget()
-        self.root.update_idletasks()
-        height = 165 if self.log_expanded else 58
-        self.main_vertical_pane.sashpos(0, max(300, self.main_vertical_pane.winfo_height() - height))
+    def _queue_layout_resize(self, _event=None):
+        if self._layout_resize_pending is None:
+            self._layout_resize_pending=self.root.after_idle(self._clamp_log_area)
+
+    def _clamp_log_area(self):
+        self._layout_resize_pending=None
+        try:
+            height=self.main_vertical_pane.winfo_height()
+            current=self.main_vertical_pane.sashpos(0)
+            if height>250:
+                self.main_vertical_pane.sashpos(0,min(max(220,current),height-110))
+        except tk.TclError:
+            pass
 
     def toggle_account_panel(self):
         if str(self.account_panel) in self.main_horizontal_pane.panes():

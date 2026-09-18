@@ -1,6 +1,6 @@
 {
   "name": "OpenAI Token Manager",
-  "version": "2.2.0-88api.7",
+  "version": "2.2.0-88api.8",
   "description": "本地OpenAI账号与Sub2API远端管理工具",
   "author": "Based on Reverse Engineering",
   "license": "Personal Use Only",
@@ -94,6 +94,16 @@
       "date": "2026-09-18",
       "changes": [
         "筛选顺序调整为分组、搜索、状态、类型"
+      ]
+    },
+    "2.2.0-88api.8": {
+      "date": "2026-09-18",
+      "changes": [
+        "ID默认升序与可点击表头排序",
+        "额度进度条和60秒服务器快照同步",
+        "常显全区域日志与悬浮清空按钮",
+        "右上导航动作及标题行统计",
+        "窗口缩放日志区域保底可见"
       ]
     }
   }

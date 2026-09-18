@@ -94,6 +94,10 @@ class TokenManagerGUI(
         self.sub2api_invalidated_row_index: dict[str, dict[str, Any]] = {}
         self.sub2api_groups: list[dict[str, Any]] = []
         self.sub2api_usage_cache = {}
+        self.sub2api_usage_cache_time = {}
+        self.sub2api_sort_column = 'id'
+        self.sub2api_sort_descending = False
+        self._snapshot_inflight = False
         self.sub2api_snapshot_server = ""
         self.sub2api_group_filters = set()
         self.manual_oauth_start = None
@@ -151,6 +155,7 @@ class TokenManagerGUI(
         self.auth2fa_stats_var = tk.StringVar(value="待授权 0")
         self.auth2fa_output_var = tk.StringVar(value="")
         self.status_var = tk.StringVar(value="就绪")
+        self.usage_sync_var = tk.StringVar(value='服务器快照 · 加载后每60秒同步')
 
         self._configure_styles()
         self.setup_ui()
@@ -159,6 +164,9 @@ class TokenManagerGUI(
         self.reload_tokens()
         self.poll_logs()
         self.update_ui_timer()
+        self.root.after(60000, self.poll_remote_snapshot)
+        self.root.after(800, self.initial_remote_load)
+        self.status_var.trace_add('write', lambda *_: self.log(self.status_var.get()))
         self.root.protocol('WM_DELETE_WINDOW', self.request_close)
 
     def request_close(self):
