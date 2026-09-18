@@ -80,19 +80,30 @@ class CredentialVault:
                     raise ValueError('同一邮箱有多份不同的授权资料，请核对后保存')
                 incoming[key] = value
             data.update(incoming)
-            encrypted = crypt(json.dumps({'version': 1, 'accounts': data}, ensure_ascii=False).encode())
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            fd, temp = tempfile.mkstemp(dir=self.path.parent, prefix='.encrypted-')
-            try:
-                with os.fdopen(fd, 'wb') as stream:
-                    stream.write(encrypted)
-                    stream.flush()
-                    os.fsync(stream.fileno())
-                os.replace(temp, self.path)
-            finally:
-                if os.path.exists(temp):
-                    os.unlink(temp)
+            self._write_accounts(data)
             return len(data)
+
+    def _write_accounts(self, data):
+        encrypted = crypt(json.dumps({'version': 1, 'accounts': data}, ensure_ascii=False).encode())
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        fd, temp = tempfile.mkstemp(dir=self.path.parent, prefix='.encrypted-')
+        try:
+            with os.fdopen(fd, 'wb') as stream:
+                stream.write(encrypted)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temp, self.path)
+        finally:
+            if os.path.exists(temp):
+                os.unlink(temp)
+
+    def delete_accounts(self, emails):
+        with _lock:
+            data = self.load()
+            removed = {str(email).strip().lower() for email in emails}.intersection(data)
+            if removed:
+                self._write_accounts({key: value for key, value in data.items() if key not in removed})
+            return removed
 
     def lookup(self, email):
         return self.load().get(str(email).strip().lower())

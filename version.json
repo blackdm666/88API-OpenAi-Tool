@@ -1,6 +1,6 @@
 {
   "name": "OpenAI Token Manager",
-  "version": "2.2.0-88api.16",
+  "version": "2.2.0-88api.17",
   "description": "本地OpenAI账号与Sub2API远端管理工具",
   "author": "Based on Reverse Engineering",
   "license": "Personal Use Only",
@@ -163,6 +163,13 @@
       "changes": [
         "Sub2API列表账号行新增右键菜单",
         "右键支持启用调度、停用调度、刷新令牌和删除选中"
+      ]
+    },
+    "2.2.0-88api.17": {
+      "date": "2026-09-18",
+      "changes": [
+        "2FA智能补授权先核对远端状态，跳过正常/停用/非401异常及待同步账号",
+        "加密2FA资料支持搜索、多选删除，同步清除输入防止退出自动保存复活"
       ]
     }
   }

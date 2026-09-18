@@ -6,7 +6,9 @@ from copy import deepcopy
 from .maintenance import recovery_cycle
 from .credential_vault import CredentialVault
 
-from tkinter import filedialog, messagebox
+import tkinter as tk
+from tkinter import filedialog, messagebox, ttk
+from .auth_batch import run_checked_authorization, remove_account_lines
 
 from tools.auth_2fa_browser import run_authorize_batch_lines_browser
 from tools.auth_2fa_live import parse_account_lines, run_authorize_batch_lines
@@ -16,6 +18,79 @@ from .services import refresh_record
 
 
 class GUIAuthMixin:
+    def delete_saved_auth2fa_accounts(self, emails):
+        if self.is_running() or self.auto_refresh_running:
+            raise ValueError('请先停止自动维护并等待授权任务完成，再删除资料')
+        removed = CredentialVault().delete_accounts(emails)
+        # Clearing the editor as well prevents save-on-close from resurrecting
+        # credentials removed from the encrypted vault.
+        text = remove_account_lines(self.auth2fa_input.get('1.0', 'end'), emails)
+        self.auth2fa_input.delete('1.0', 'end')
+        self.auth2fa_input.insert('1.0', text)
+        self.update_auth2fa_input_stats()
+        self.update_vault_status()
+        self.log(f'已删除 {len(removed)} 个账号的加密2FA资料')
+        return removed
+
+    def manage_auth2fa_credentials(self):
+        if self.is_running() or self.auto_refresh_running:
+            self.log('请先停止自动维护并等待当前任务完成，再管理2FA资料', 'warning')
+            return
+        try:
+            emails = sorted(CredentialVault().load())
+        except Exception as exc:
+            messagebox.showerror('资料库读取失败', str(exc), parent=self.root)
+            return
+        dialog = tk.Toplevel(self.root)
+        dialog.title('管理已存 2FA 资料')
+        dialog.geometry('640x440')
+        dialog.transient(self.root)
+        dialog.grab_set()
+        frame = ttk.Frame(dialog, padding=14)
+        frame.pack(fill='both', expand=True)
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(2, weight=1)
+        ttk.Label(frame, text='搜索邮箱；支持多选。删除仅移除已存密码/2FA密匙及输入框对应行，保留本地Token和Sub2API账号。', wraplength=590).grid(row=0, column=0, columnspan=2, sticky='w', pady=(0, 8))
+        search = tk.StringVar()
+        ttk.Entry(frame, textvariable=search).grid(row=1, column=0, columnspan=2, sticky='ew', pady=(0, 8))
+        tree = ttk.Treeview(frame, columns=('email',), show='headings', selectmode='extended')
+        tree.heading('email', text='已保存的账号邮箱')
+        tree.column('email', width=480)
+        tree.grid(row=2, column=0, sticky='nsew')
+        scrollbar = ttk.Scrollbar(frame, orient='vertical', command=tree.yview)
+        tree.configure(yscrollcommand=scrollbar.set)
+        scrollbar.grid(row=2, column=1, sticky='ns')
+        count = tk.StringVar()
+        def populate(*_):
+            selected = set(tree.selection())
+            for row in tree.get_children():
+                tree.delete(row)
+            for email in emails:
+                if search.get().strip().casefold() in email.casefold():
+                    tree.insert('', 'end', iid=email, values=(email,))
+                    if email in selected:
+                        tree.selection_add(email)
+            count.set(f'已保存 {len(emails)} · 显示 {len(tree.get_children())}')
+        def delete_selected():
+            selected = list(tree.selection())
+            if not selected:
+                return
+            if not messagebox.askyesno('删除2FA资料', f'确认删除选中的 {len(selected)} 个账号资料？\n删除后自动重新登录需要再次导入这些资料。', parent=dialog):
+                return
+            try:
+                self.delete_saved_auth2fa_accounts(selected)
+                emails[:] = sorted(CredentialVault().load())
+                populate()
+            except Exception as exc:
+                messagebox.showerror('删除失败', str(exc), parent=dialog)
+        buttons = ttk.Frame(frame)
+        buttons.grid(row=3, column=0, columnspan=2, sticky='ew', pady=(10, 0))
+        ttk.Label(buttons, textvariable=count).pack(side='left')
+        ttk.Button(buttons, text='删除所选资料', command=delete_selected).pack(side='right')
+        ttk.Button(buttons, text='全选显示结果', command=lambda: tree.selection_set(tree.get_children())).pack(side='right', padx=6)
+        search.trace_add('write', populate)
+        populate()
+
     def update_vault_status(self):
         try:
             vault = CredentialVault()
@@ -143,32 +218,13 @@ class GUIAuthMixin:
             self.root.after(0, lambda: self.auth2fa_stats_var.set(f"执行中 {done}/{total_count}"))
 
         def worker():
-            if mode == "browser":
-                return run_authorize_batch_lines_browser(
-                    raw_text,
-                    settings,
-                    workers=workers,
-                    browser_path=browser_path,
-                    debug_port_base=browser_debug_port,
-                    timeout=timeout,
-                    save_dir=save_dir,
-                    save_token=save_token,
-                    include_secrets=False,
-                    quiet=True,
-                    log_fn=gui_log,
-                    progress_cb=progress,
-                )
-            return run_authorize_batch_lines(
-                raw_text,
-                settings,
-                workers=workers,
-                save_dir=save_dir,
-                save_token=save_token,
-                include_secrets=False,
-                quiet=True,
-                log_fn=gui_log,
-                progress_cb=progress,
-            )
+            options = dict(workers=workers, save_dir=save_dir, save_token=save_token,
+                           include_secrets=False, quiet=True, log_fn=gui_log, progress_cb=progress)
+            runner = run_authorize_batch_lines
+            if mode == 'browser':
+                runner = run_authorize_batch_lines_browser
+                options.update(browser_path=browser_path, debug_port_base=browser_debug_port, timeout=timeout)
+            return run_checked_authorization(raw_text, settings, self.store.load_all(), runner, options, log_fn=gui_log)
 
         def done(result):
             self.set_running(False, "2FA 批量授权结束")
@@ -178,23 +234,23 @@ class GUIAuthMixin:
             summary_path = str(result.get("summary_path") or "")
             self.auth2fa_output_var.set(summary_path)
             self.auth2fa_stats_var.set(
-                f"完成 成功 {int(result.get('success_count') or 0)} 失败 {int(result.get('fail_count') or 0)}  无效 {int(result.get('input_error_count') or 0)}"
+                f"完成 成功 {int(result.get('success_count') or 0)} 失败 {int(result.get('fail_count') or 0)} 跳过 {int(result.get('skipped_count') or 0)}"
             )
             if save_token and int(result.get("success_count") or 0) > 0:
                 self.reload_tokens(save_first=False)
             summary_title = "浏览器链批量授权" if mode == "browser" else "2FA 批量授权"
-            self.log(f"{summary_title}完成 成功={int(result.get('success_count') or 0)} 失败={int(result.get('fail_count') or 0)} 无效={int(result.get('input_error_count') or 0)}")
+            self.log(f"{summary_title}完成 成功={int(result.get('success_count') or 0)} 失败={int(result.get('fail_count') or 0)} 跳过={int(result.get('skipped_count') or 0)}")
             if summary_path:
                 self.log(f"批量汇总: {summary_path}")
             messagebox.showinfo(
                 "完成",
                 f"成功 {int(result.get('success_count') or 0)} 个\n"
                 f"失败 {int(result.get('fail_count') or 0)} 个\n"
-                f"无效 {int(result.get('input_error_count') or 0)} 行\n"
+                f"跳过 {int(result.get('skipped_count') or 0)} 个（原因见日志）\n"
                 f"{summary_path}",
             )
 
-        status_text = "正在执行浏览器链批量授权" if mode == "browser" else "正在执行 2FA 批量授权"
+        status_text = "正在核对 Sub2API 授权状态"
         self.run_background(status_text, worker, done)
 
     def generate_manual_url(self) -> None:
