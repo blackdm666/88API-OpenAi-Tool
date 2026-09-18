@@ -1,6 +1,6 @@
 {
   "name": "OpenAI Token Manager",
-  "version": "2.2.0-88api.27",
+  "version": "2.2.0-88api.28",
   "description": "本地OpenAI账号与Sub2API远端管理工具",
   "author": "Based on Reverse Engineering",
   "license": "Personal Use Only",
@@ -238,6 +238,12 @@
       "date": "2026-09-18",
       "changes": [
         "Sub2API账号标签、状态、调度、并发、7d已用、优先级列内容居中显示"
+      ]
+    },
+    "2.2.0-88api.28": {
+      "date": "2026-09-18",
+      "changes": [
+        "智能补授权自动从DPAPI资料库读取首次保存的账号资料，不再要求重复输入2FA内容"
       ]
     }
   }

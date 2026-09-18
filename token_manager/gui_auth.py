@@ -19,6 +19,20 @@ from .oauth import browser_assisted_authorize, exchange_callback, generate_oauth
 from .services import refresh_record
 
 
+def saved_credential_lines(accounts: dict) -> str:
+    """Build authorization input only in memory; never place it in the editor."""
+    lines = []
+    for item in accounts.values() if isinstance(accounts, dict) else []:
+        if not isinstance(item, dict):
+            continue
+        email = str(item.get('email') or '').strip()
+        password = str(item.get('password') or '')
+        totp_secret = str(item.get('totp_secret') or '').strip()
+        if email and password and totp_secret:
+            lines.append(f'{email}----{password}----{totp_secret}')
+    return '\n'.join(lines)
+
+
 class GUIAuthMixin:
     def delete_saved_auth2fa_accounts(self, emails):
         if self.is_running() or self.auto_refresh_running:
@@ -190,14 +204,23 @@ class GUIAuthMixin:
         if self.is_running() or self.auto_refresh_running:
             self.log('已有任务或自动维护在运行，未启动新的授权任务', 'warning')
             return
-        raw_text = self.auth2fa_input.get("1.0", "end")
+        if not self.save_auth2fa_credentials():
+            return
+        # The encrypted vault is the source of truth after first import. The
+        # editor may be empty or intentionally kept hidden; smart recovery can
+        # still authorize every saved identity without asking the user to paste
+        # passwords/TOTP secrets again.
+        try:
+            raw_text = saved_credential_lines(CredentialVault().load())
+        except Exception as exc:
+            messagebox.showerror('资料库读取失败', str(exc))
+            return
+        if not raw_text.strip():
+            raw_text = self.auth2fa_input.get("1.0", "end")
         accounts, errors = parse_account_lines(raw_text)
         if not accounts:
-            messagebox.showerror("错误", "请先导入账号，格式为 账号----密码----2FA密匙")
+            messagebox.showerror("错误", "请先导入并加密保存账号资料")
             self.update_auth2fa_input_stats()
-            return
-
-        if not self.save_auth2fa_credentials():
             return
         self.save_settings(reload_tokens=False, notify=False)
         settings = self.current_settings()

@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 from token_manager.auth_batch import plan_authorization, run_checked_authorization, remove_account_lines
 from token_manager.config import default_config
 from token_manager.credential_vault import CredentialVault
-from token_manager.gui_auth import GUIAuthMixin
+from token_manager.gui_auth import GUIAuthMixin, saved_credential_lines
 from tools.auth_2fa_live import parse_account_lines
 
 
@@ -20,6 +20,12 @@ def remote(email='a@example.test', **kw):
 
 
 class AuthPreflightTest(unittest.TestCase):
+    def test_saved_credentials_can_rebuild_authorization_input_without_editor(self):
+        raw = saved_credential_lines({'a@example.test': {
+            'email': 'a@example.test', 'password': 'private-password', 'totp_secret': 'JBSWY3DPEHPK3PXP'
+        }})
+        self.assertEqual(raw, 'a@example.test----private-password----JBSWY3DPEHPK3PXP')
+
     def test_active_including_cooldown_and_disabled_scheduling_skips_login(self):
         for fields in ({'schedulable': True}, {'schedulable': False}, {'rate_limit_reset_at': '2099-01-01T00:00:00Z'}):
             eligible, skipped = plan_authorization([account()], [], [remote(status='active', **fields)])
