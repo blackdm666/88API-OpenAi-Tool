@@ -32,7 +32,7 @@ class GUISub2APIMixin:
         menu.add_command(label='启用调度（选中）', command=lambda: self.set_selected_sub2api_schedulable(True))
         menu.add_command(label='停用调度（选中）', command=lambda: self.set_selected_sub2api_schedulable(False))
         menu.add_separator()
-        menu.add_command(label='刷新令牌（选中）', command=self.refresh_selected_sub2api_remote)
+        menu.add_command(label='刷新令牌', command=self.refresh_selected_sub2api_remote)
         menu.add_separator()
         menu.add_command(label='删除选中…', command=self.delete_selected_sub2api_records)
         try:
