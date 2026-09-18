@@ -404,6 +404,7 @@ class GUILayoutMixin:
         x=ttk.Scrollbar(table,orient='horizontal',command=self.sub2api_tree.xview)
         self.sub2api_tree.configure(yscrollcommand=y.set,xscrollcommand=x.set)
         self.sub2api_tree.grid(row=0,column=0,sticky='nsew');y.grid(row=0,column=1,sticky='ns');x.grid(row=1,column=0,sticky='ew')
+        self.sub2api_tree.bind('<Button-3>', self.show_sub2api_context_menu, add='+')
         self.sub2api_tree.tag_configure('error',foreground='#a94438')
         self.sub2api_tree.tag_configure('invalidated',foreground='#a94438')
         self.sub2api_tree.tag_configure('warning',foreground=self.palette['accent'])

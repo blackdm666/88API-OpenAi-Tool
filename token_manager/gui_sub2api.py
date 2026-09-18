@@ -22,6 +22,24 @@ from .services import (
 
 
 class GUISub2APIMixin:
+    def show_sub2api_context_menu(self, event):
+        row = self.sub2api_tree.identify_row(event.y)
+        if row and row not in self.sub2api_tree.selection():
+            self.sub2api_tree.selection_set(row)
+        if not row:
+            return
+        menu = tk.Menu(self.root, tearoff=False)
+        menu.add_command(label='启用调度（选中）', command=lambda: self.set_selected_sub2api_schedulable(True))
+        menu.add_command(label='停用调度（选中）', command=lambda: self.set_selected_sub2api_schedulable(False))
+        menu.add_separator()
+        menu.add_command(label='刷新令牌（选中）', command=self.refresh_selected_sub2api_remote)
+        menu.add_separator()
+        menu.add_command(label='删除选中…', command=self.delete_selected_sub2api_records)
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
     def reset_sub2api_default_groups(self):
         cfg = (self.config.get('integrations') or {}).get('sub2api') or {}
         self.sub2api_group_filters.clear()
