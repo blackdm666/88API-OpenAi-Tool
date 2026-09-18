@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+from urllib.parse import quote
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -503,6 +504,31 @@ def bulk_update_sub2api_accounts(
     return data if isinstance(data, dict) else {}
 
 
+def update_sub2api_account_settings(
+    settings: dict[str, Any],
+    record: dict[str, Any],
+    updates: dict[str, Any],
+    *,
+    proxy_url: str = "",
+) -> dict[str, Any]:
+    """Update operational fields on one existing Sub2API OAuth account."""
+    account_id = safe_int(record.get("id"))
+    if account_id <= 0:
+        raise ValueError("远端账号 ID 无效")
+    extra = dict(record.get("extra") or {})
+    extra.update(dict(updates.pop("extra", {}) or {}))
+    payload = {key: value for key, value in dict(updates).items() if value is not None}
+    payload["extra"] = extra
+    response = _sub2api_request(
+        settings, "PUT", f"/api/v1/admin/accounts/{account_id}",
+        proxy_url=proxy_url, headers={"Content-Type": "application/json"}, json=payload,
+    )
+    if response.status_code not in (200, 201):
+        raise RuntimeError(redact_error(_response_error(response)))
+    data = _sub2api_response_data(response)
+    return data if isinstance(data, dict) else {**record, **payload}
+
+
 def delete_sub2api_account(
     settings: dict[str, Any],
     account_id: int,
@@ -680,6 +706,41 @@ def fetch_sub2api_proxies(settings, *, proxy_url=''):
     items = data if isinstance(data, list) else data.get('items', [])
     # The selector needs names only, never proxy passwords.
     return [{'id': p['id'], 'name': p.get('name', ''), 'status': p.get('status', '')} for p in items]
+
+
+def fetch_sub2api_proxy_endpoints(settings, *, proxy_url='', proxy_ids=None):
+    """Read proxy endpoints in memory for local OAuth authorization routing."""
+    response = _sub2api_request(settings, 'GET', '/api/v1/admin/proxies/all', proxy_url=proxy_url)
+    if response.status_code != 200:
+        raise RuntimeError(redact_error(_response_error(response)))
+    data = _sub2api_response_data(response)
+    items = data if isinstance(data, list) else data.get('items', [])
+    wanted = {int(value) for value in (proxy_ids or [])}
+    endpoints = []
+    for item in items if isinstance(items, list) else []:
+        if not isinstance(item, dict) or item.get('status') not in ('active', ''):
+            continue
+        try:
+            proxy_id = int(item.get('id'))
+            port = int(item.get('port'))
+        except (TypeError, ValueError):
+            continue
+        if wanted and proxy_id not in wanted:
+            continue
+        host = str(item.get('host') or '').strip()
+        protocol = str(item.get('protocol') or 'http').strip().lower()
+        if not host or port <= 0 or protocol not in ('http', 'https', 'socks5', 'socks5h'):
+            continue
+        username = str(item.get('username') or '').strip()
+        password = str(item.get('password') or item.get('passwd') or '').strip()
+        auth = ''
+        if username:
+            auth = quote(username, safe='')
+            if password:
+                auth += ':' + quote(password, safe='')
+            auth += '@'
+        endpoints.append({'id': proxy_id, 'url': f'{protocol}://{auth}{host}:{port}'})
+    return endpoints
 
 
 def upload_state_patch(target: str, ok: bool, message: str) -> dict[str, Any]:

@@ -96,7 +96,7 @@ def scheduling_cell(record, *, now=None):
         until = parse_time(record.get(field))
         if until and until > current:
             return label if field == 'rate_limit_reset_at' else '开启·' + label
-    return '参与调度'
+    return '调度中'
 
 
 def concurrency_cell(record):
@@ -122,6 +122,9 @@ def sort_account_rows(records, column='id', descending=False, usage_reader=snaps
         elif column == 'scheduling': value=scheduling_cell(record)
         elif column == 'concurrency':
             try: value = int(record.get('current_concurrency'))
+            except (TypeError, ValueError): value = None
+        elif column == 'priority':
+            try: value = int(record.get('priority'))
             except (TypeError, ValueError): value = None
         elif column == 'error': value=str(record.get('error_message') or '').casefold()
         else: value=str(record.get(column) or '').casefold()

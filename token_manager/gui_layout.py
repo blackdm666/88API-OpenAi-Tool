@@ -386,9 +386,9 @@ class GUILayoutMixin:
         table=ttk.Frame(parent,style='Card.TFrame')
         table.grid(row=2,column=0,sticky='nsew')
         table.columnconfigure(0,weight=1);table.rowconfigure(0,weight=1)
-        columns=('id','email','groups','status','scheduling','concurrency','quota7','error')
+        columns=('id','email','groups','status','scheduling','concurrency','quota7','priority','error')
         self.sub2api_tree=UsageTreeview(table,columns=columns,show='headings',selectmode='extended',height=12)
-        for key,label,width in [('id','ID',40),('email','账号名称',105),('groups','账号标签',105),('status','状态',55),('scheduling','调度',70),('concurrency','并发',65),('quota7','7d已用',60),('error','错误摘要',85)]:
+        for key,label,width in [('id','ID',40),('email','账号名称',105),('groups','账号标签',105),('status','状态',55),('scheduling','调度',70),('concurrency','并发',65),('quota7','7d已用',60),('priority','优先级',60),('error','错误摘要',85)]:
             self.sub2api_tree.heading(key,text=label+(' ↑' if key=='id' else ''),command=lambda k=key:self.sort_sub2api_accounts(k))
             self.sub2api_tree.column(key,width=width,minwidth=40,stretch=key in ('email','groups','error'))
         y=ttk.Scrollbar(table,orient='vertical',command=self.sub2api_tree.yview)

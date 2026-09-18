@@ -59,7 +59,7 @@ class LayoutTest(unittest.TestCase):
                     app.populate_sub2api_tree()
                     root.update_idletasks()
                     self.assertEqual(len(app.sub2api_tree.get_children()), 16)
-                    self.assertEqual(app.sub2api_tree.set(app.sub2api_tree.get_children()[0], 'scheduling'), '参与调度')
+                    self.assertEqual(app.sub2api_tree.set(app.sub2api_tree.get_children()[0], 'scheduling'), '调度中')
                     self.assertEqual(app.sub2api_tree.set(app.sub2api_tree.get_children()[1], 'scheduling'), '已关闭')
                     root.tk.call(app.sub2api_tree.heading('scheduling','command'))
                     self.assertEqual(app.sub2api_sort_column, 'scheduling')

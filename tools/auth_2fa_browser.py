@@ -10,6 +10,8 @@ import re
 import subprocess
 import sys
 import time
+from copy import deepcopy
+from random import SystemRandom
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from itertools import count
 from pathlib import Path
@@ -1291,6 +1293,7 @@ def run_authorize_batch_lines_browser(
     quiet: bool = True,
     log_fn: Callable[[str], None] | None = None,
     progress_cb: Callable[[int, int, str], None] | None = None,
+    proxy_pool: list[str] | None = None,
 ) -> dict[str, Any]:
     resolved_save_dir = _ensure_dir(Path(save_dir).resolve() if save_dir else _default_save_dir())
     accounts, input_errors = parse_account_lines(raw_text)
@@ -1323,6 +1326,8 @@ def run_authorize_batch_lines_browser(
     worker_count = max(1, min(int(workers or 1), total))
     completed = 0
     results: list[dict[str, Any]] = []
+    proxy_pool = [str(value).strip() for value in (proxy_pool or []) if str(value).strip()]
+    chooser = SystemRandom()
     port_counter = count(max(1024, int(debug_port_base or DEFAULT_DEBUG_PORT_BASE)))
 
     def _account_log(email: str):
@@ -1332,9 +1337,12 @@ def run_authorize_batch_lines_browser(
         return _writer
 
     def _run_one(account: AuthAccount, port: int) -> dict[str, Any]:
+        account_settings = deepcopy(settings)
+        if proxy_pool:
+            account_settings['http_proxy'] = chooser.choice(proxy_pool)
         return authorize_account_browser(
             account,
-            settings,
+            account_settings,
             browser_path=browser_path,
             debug_port=port,
             timeout=timeout,

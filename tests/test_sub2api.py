@@ -7,7 +7,7 @@ from unittest.mock import patch, Mock
 from token_manager.config import default_config
 from token_manager.store import TokenStore
 from token_manager import integrations as api
-from token_manager.integrations import fetch_sub2api_concurrency_snapshot
+from token_manager.integrations import fetch_sub2api_concurrency_snapshot, fetch_sub2api_proxy_endpoints
 from token_manager.maintenance import recovery_cycle
 from token_manager.services import set_sub2api_remote_records_schedulable
 from token_manager.sub2api_policy import (
@@ -65,6 +65,15 @@ class Sub2APITest(Fixture, unittest.TestCase):
             rows = fetch_sub2api_concurrency_snapshot(self.settings)
         self.assertEqual(rows[0]['current_concurrency'], 4)
         self.assertEqual(request.call_args.kwargs['params']['lite'], '1')
+
+    def test_proxy_endpoints_are_filtered_and_built_in_memory(self):
+        payload = {'items': [
+            {'id': 8, 'name': 'proxy A', 'protocol': 'socks5', 'host': '127.0.0.1', 'port': 1080, 'username': 'u', 'password': 'p', 'status': 'active'},
+            {'id': 9, 'name': 'disabled', 'protocol': 'http', 'host': '127.0.0.2', 'port': 8080, 'status': 'inactive'},
+        ]}
+        with patch('token_manager.integrations._sub2api_request', return_value=response(payload)):
+            result = fetch_sub2api_proxy_endpoints(self.settings, proxy_ids=[8, 9])
+        self.assertEqual(result, [{'id': 8, 'url': 'socks5://u:p@127.0.0.1:1080'}])
     def test_schedulable_action_does_not_update_account_status(self):
         with patch('token_manager.services.set_sub2api_schedulable', side_effect=lambda settings, account_id, enabled, proxy_url='': {"id": account_id, "status": "active", "schedulable": enabled}) as setter:
             result = set_sub2api_remote_records_schedulable(

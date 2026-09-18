@@ -28,7 +28,7 @@ class UsageTest(unittest.TestCase):
     def test_scheduling_distinguishes_switch_activation_and_cooldown(self):
         now = datetime(2026, 9, 18, tzinfo=timezone.utc)
         cases = [
-            ({'schedulable':True,'status':'active'}, '参与调度'),
+            ({'schedulable':True,'status':'active'}, '调度中'),
             ({'schedulable':False,'status':'active'}, '已关闭'),
             ({'status':'active'}, '未知'),
             ({'schedulable':True,'status':'inactive'}, '开启·账号停用'),
@@ -37,7 +37,7 @@ class UsageTest(unittest.TestCase):
             ({'schedulable':True,'status':'active','rate_limit_reset_at':'2099-01-01T00:00:00Z'}, '限流中'),
             ({'schedulable':False,'status':'active','rate_limit_reset_at':'2099-01-01T00:00:00Z'}, '已关闭'),
             ({'schedulable':True,'status':'active','overload_until':'2099-01-01T00:00:00Z'}, '开启·过载冷却'),
-            ({'schedulable':True,'status':'active','rate_limit_reset_at':'2020-01-01T00:00:00Z'}, '参与调度'),
+            ({'schedulable':True,'status':'active','rate_limit_reset_at':'2020-01-01T00:00:00Z'}, '调度中'),
             ({'schedulable':True,'status':'active','expires_at':1,'auto_pause_on_expired':True}, '开启·已到期'),
         ]
         for record, expected in cases:

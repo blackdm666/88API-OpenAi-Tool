@@ -10,6 +10,8 @@ import re
 import sys
 import time
 import urllib.parse
+from copy import deepcopy
+from random import SystemRandom
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -1127,6 +1129,7 @@ def run_authorize_batch_lines(
     quiet: bool = True,
     log_fn: Callable[[str], None] | None = None,
     progress_cb: Callable[[int, int, str], None] | None = None,
+    proxy_pool: list[str] | None = None,
 ) -> dict[str, Any]:
     resolved_save_dir = _ensure_dir(Path(save_dir).resolve() if save_dir else _default_save_dir())
     accounts, input_errors = parse_account_lines(raw_text)
@@ -1159,6 +1162,14 @@ def run_authorize_batch_lines(
     worker_count = max(1, min(int(workers or 1), total))
     completed = 0
     results: list[dict[str, Any]] = []
+    proxy_pool = [str(value).strip() for value in (proxy_pool or []) if str(value).strip()]
+    chooser = SystemRandom()
+
+    def _account_settings():
+        account_settings = deepcopy(settings)
+        if proxy_pool:
+            account_settings['http_proxy'] = chooser.choice(proxy_pool)
+        return account_settings
 
     def _account_log(email: str):
         def _writer(message: str) -> None:
@@ -1170,7 +1181,7 @@ def run_authorize_batch_lines(
         for account in accounts:
             result = authorize_account(
                 account,
-                settings,
+                _account_settings(),
                 save_dir=resolved_save_dir,
                 save_token=save_token,
                 include_secrets=include_secrets,
@@ -1187,7 +1198,7 @@ def run_authorize_batch_lines(
                 executor.submit(
                     authorize_account,
                     account,
-                    settings,
+                    _account_settings(),
                     save_dir=resolved_save_dir,
                     save_token=save_token,
                     include_secrets=include_secrets,

@@ -7,11 +7,12 @@ import time
 import tkinter as tk
 from tkinter import messagebox, ttk
 from .gui_widgets import CheckList
-from .integrations import fetch_sub2api_usage, fetch_sub2api_accounts, fetch_sub2api_concurrency_snapshot
+from .integrations import fetch_sub2api_usage, fetch_sub2api_accounts, fetch_sub2api_concurrency_snapshot, update_sub2api_account_settings
 from .usage_display import snapshot_usage, quota_cell, sort_account_rows, scheduling_cell, concurrency_cell
 from .recovery_support import remote_health
 from .sub2api_policy import normalize_server_url, match_remote, default_list_group_ids
 from .utils import openai_plan_label
+from .gui_sub2api_settings import FINGERPRINTS, WS_MODES
 
 from .services import (
     delete_sub2api_remote_records,
@@ -34,6 +35,7 @@ class GUISub2APIMixin:
         menu.add_command(label='停用调度（选中）', command=lambda: self.set_selected_sub2api_schedulable(False))
         menu.add_separator()
         menu.add_command(label='刷新令牌', command=self.refresh_selected_sub2api_remote)
+        menu.add_command(label='编辑账号', command=self.edit_selected_sub2api_remote)
         menu.add_separator()
         menu.add_command(label='删除选中…', command=self.delete_selected_sub2api_records)
         try:
@@ -250,6 +252,7 @@ class GUISub2APIMixin:
                     scheduling_cell(record),
                     concurrency_cell(record),
                     quota_cell(self.usage_for_record(record),"seven_day"),
+                    record.get('priority', ''),
                     self._sub2api_error_summary(record),
                 ),
                 tags=tags,
@@ -359,7 +362,7 @@ class GUISub2APIMixin:
             return None
 
     def sort_description(self):
-        labels={'id':'ID','email':'账号名称','groups':'分组','status':'状态','scheduling':'调度','concurrency':'并发','quota7':'7d已用','error':'错误'}
+        labels={'id':'ID','email':'账号名称','groups':'分组','status':'状态','scheduling':'调度','concurrency':'并发','quota7':'7d已用','priority':'优先级','error':'错误'}
         return labels[self.sub2api_sort_column]+('降序' if self.sub2api_sort_descending else '升序')
 
     def sorted_sub2api_records(self):
@@ -371,7 +374,7 @@ class GUISub2APIMixin:
         else:
             self.sub2api_sort_column=column
             self.sub2api_sort_descending=False
-        labels={'id':'ID','email':'账号名称','groups':'分组','status':'状态','scheduling':'调度','concurrency':'并发','quota7':'7d已用','error':'错误摘要'}
+        labels={'id':'ID','email':'账号名称','groups':'分组','status':'状态','scheduling':'调度','concurrency':'并发','quota7':'7d已用','priority':'优先级','error':'错误摘要'}
         for key,label in labels.items():
             arrow=(' ↓' if self.sub2api_sort_descending else ' ↑') if key==column else ''
             self.sub2api_tree.heading(key,text=label+arrow)
@@ -469,6 +472,104 @@ class GUISub2APIMixin:
             messagebox.showerror("错误", "请先选择远端 Sub2API 账号")
             return
         self._refresh_sub2api_remote_records(records, label="选中")
+
+    def edit_selected_sub2api_remote(self) -> None:
+        records = self.selected_sub2api_pool_records()
+        if len(records) != 1:
+            messagebox.showinfo('编辑账号', '请只选择一个远端账号进行编辑')
+            return
+        record = records[0]
+        dialog = tk.Toplevel(self.root)
+        dialog.title(f"编辑远端账号 #{record.get('id', '')}")
+        dialog.geometry('560x470')
+        dialog.transient(self.root)
+        dialog.grab_set()
+        frame = ttk.Frame(dialog, padding=16)
+        frame.pack(fill='both', expand=True)
+        frame.columnconfigure(1, weight=1)
+
+        values = {
+            'concurrency': tk.StringVar(value=str(record.get('concurrency') or 0)),
+            'priority': tk.StringVar(value=str(record.get('priority') or 0)),
+            'rate_multiplier': tk.StringVar(value=str(record.get('rate_multiplier', 1))),
+            'fingerprint': tk.StringVar(value='关闭'),
+            'ws_mode': tk.StringVar(value='上下文池（默认）'),
+            'auto_pause': tk.BooleanVar(value=bool(record.get('auto_pause_on_expired', True))),
+            'proxy': tk.StringVar(value='直连'),
+        }
+        extra = record.get('extra') or {}
+        values['fingerprint'].set(next((label for label, mode in FINGERPRINTS.items()
+                                        if mode == extra.get('codex_fingerprint_mode', 'off')), '关闭'))
+        values['ws_mode'].set(next((label for label, mode in WS_MODES.items()
+                                   if mode == extra.get('openai_oauth_responses_websockets_v2_mode', 'ctx_pool')),
+                                  '上下文池（默认）'))
+        proxy_choices = {'直连': 0}
+        for item in self.sub2api_records:
+            proxy_id = item.get('proxy_id')
+            if proxy_id:
+                proxy = item.get('proxy') or {}
+                proxy_choices[f"#{proxy_id} {proxy.get('name') or '代理'}"] = int(proxy_id)
+        current_proxy = int(record.get('proxy_id') or 0)
+        if current_proxy:
+            values['proxy'].set(next((label for label, value in proxy_choices.items() if value == current_proxy), f'#{current_proxy} 代理'))
+            proxy_choices.setdefault(values['proxy'].get(), current_proxy)
+
+        def field(row, label, key, *, options=None):
+            ttk.Label(frame, text=label, style='Card.TLabel').grid(row=row, column=0, sticky='w', pady=6, padx=(0, 12))
+            if options is None:
+                widget = ttk.Entry(frame, textvariable=values[key])
+            else:
+                widget = ttk.Combobox(frame, textvariable=values[key], values=options, state='readonly')
+            widget.grid(row=row, column=1, sticky='ew', pady=6)
+
+        field(0, '并发数', 'concurrency')
+        field(1, '调度优先级', 'priority')
+        field(2, '账号倍率', 'rate_multiplier')
+        field(3, '代理池', 'proxy', options=list(proxy_choices))
+        field(4, '设备指纹收敛', 'fingerprint', options=list(FINGERPRINTS))
+        field(5, 'WS mode', 'ws_mode', options=list(WS_MODES))
+        ttk.Checkbutton(frame, text='账号到期时自动暂停', variable=values['auto_pause']).grid(row=6, column=0, columnspan=2, sticky='w', pady=6)
+        ttk.Label(frame, text='只修改运营参数；OAuth凭据、邮箱和工作区身份不会被编辑覆盖。', style='CardSubtle.TLabel', wraplength=500).grid(row=7, column=0, columnspan=2, sticky='w', pady=(8, 12))
+
+        def save():
+            try:
+                concurrency = int(values['concurrency'].get().strip())
+                priority = int(values['priority'].get().strip())
+                rate = float(values['rate_multiplier'].get().strip())
+                if concurrency < 1 or concurrency > 10000 or priority < 0 or priority > 100000 or rate < 0:
+                    raise ValueError
+            except (TypeError, ValueError):
+                messagebox.showerror('配置无效', '并发、优先级或倍率格式不正确', parent=dialog)
+                return
+            updates = {
+                'concurrency': concurrency,
+                'priority': priority,
+                'rate_multiplier': rate,
+                'proxy_id': proxy_choices.get(values['proxy'].get(), 0),
+                'auto_pause_on_expired': bool(values['auto_pause'].get()),
+                'extra': {
+                    'codex_fingerprint_mode': FINGERPRINTS[values['fingerprint'].get()],
+                    'openai_oauth_responses_websockets_v2_mode': WS_MODES[values['ws_mode'].get()],
+                    'openai_oauth_responses_websockets_v2_enabled': WS_MODES[values['ws_mode'].get()] != 'off',
+                },
+            }
+            settings = self.current_settings()
+            proxy = settings.get('http_proxy', '')
+            def worker():
+                return update_sub2api_account_settings(settings, record, updates, proxy_url=proxy)
+            def done(result):
+                self.set_running(False, '远端账号编辑完成')
+                if result.get('error'):
+                    messagebox.showerror('编辑失败', result['error'], parent=dialog)
+                    return
+                dialog.destroy()
+                self.refresh_sub2api_accounts()
+            self.run_background('正在保存远端账号配置', worker, done)
+
+        buttons = ttk.Frame(frame)
+        buttons.grid(row=8, column=0, columnspan=2, sticky='ew', pady=(8, 0))
+        ttk.Button(buttons, text='取消', command=dialog.destroy).pack(side='right')
+        ttk.Button(buttons, text='保存', command=save, style='Primary.TButton').pack(side='right', padx=8)
 
     def refresh_filtered_sub2api_remote(self) -> None:
         records = list(self.filtered_sub2api_records)

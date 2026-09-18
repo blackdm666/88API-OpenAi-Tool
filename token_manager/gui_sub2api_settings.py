@@ -69,6 +69,49 @@ class GUISub2APISettingsMixin:
         parameters.columnconfigure(1, weight=1)
         book.select(parameters)
         values = {}
+        proxy_menu_holder = {}
+        proxy_menu_vars = {}
+        proxy_display_var = tk.StringVar(value='代理池：' + (str(cfg.get('proxy_id') or '直连')))
+
+        def update_proxy_menu(proxies):
+            menu = proxy_menu_holder.get('menu')
+            if menu is None:
+                return
+            menu.delete(0, 'end')
+            proxy_menu_vars.clear()
+            try:
+                selected = set(proxy_candidates({'proxy_id': values['proxy_id'].get()}))
+            except ValueError:
+                selected = set()
+            for item in proxies:
+                if item.get('status') not in ('active', ''):
+                    continue
+                proxy_id = int(item['id'])
+                variable = tk.BooleanVar(value=proxy_id in selected)
+                proxy_menu_vars[proxy_id] = variable
+                menu.add_checkbutton(
+                    label=f"#{proxy_id}  {item.get('name') or '代理'}",
+                    variable=variable,
+                    command=lambda: sync_proxy_menu(),
+                )
+            if not proxy_menu_vars:
+                for proxy_id in sorted(selected):
+                    variable = tk.BooleanVar(value=True)
+                    proxy_menu_vars[proxy_id] = variable
+                    menu.add_checkbutton(label=f'#{proxy_id}', variable=variable, command=lambda: sync_proxy_menu())
+            menu.add_separator()
+            menu.add_command(label='清空代理（直连）', command=lambda: clear_proxy_menu())
+            sync_proxy_menu()
+
+        def sync_proxy_menu():
+            selected = [str(proxy_id) for proxy_id, variable in proxy_menu_vars.items() if variable.get()]
+            values['proxy_id'].set(','.join(selected))
+            proxy_display_var.set('代理池：' + (','.join(selected) if selected else '直连'))
+
+        def clear_proxy_menu():
+            for variable in proxy_menu_vars.values():
+                variable.set(False)
+            sync_proxy_menu()
 
         def field(row, key, label, default="", secret=False, options=None):
             container = connection if row <= 4 else parameters
@@ -81,7 +124,12 @@ class GUISub2APISettingsMixin:
                     cfg.get(key, default) if cfg.get(key, default) is not None else ""
                 )
             )
-            if options:
+            if key == 'proxy_id':
+                widget = ttk.Menubutton(container, textvariable=proxy_display_var)
+                menu = tk.Menu(widget, tearoff=False)
+                widget.configure(menu=menu)
+                proxy_menu_holder['menu'] = menu
+            elif options:
                 widget = ttk.Combobox(
                     container,
                     textvariable=values[key],
@@ -114,6 +162,7 @@ class GUISub2APISettingsMixin:
         field(9, "rate_multiplier", "账号倍率", 1)
         field(10, "proxy_id", "代理池 ID（逗号分隔）", "")
         values['proxy_id'].set(','.join(map(str, proxy_candidates(cfg))))
+        update_proxy_menu([])
         field(
             11,
             "codex_fingerprint_mode",
@@ -194,6 +243,7 @@ class GUISub2APISettingsMixin:
                     catalog.set("读取失败：" + result["error"])
                     return
                 self.show_sub2api_option_picker(dialog, result, values)
+                update_proxy_menu(result['proxies'])
                 catalog.set(
                     f"已读取 {len(result['groups'])} 个分组、{len(result['proxies'])} 个代理。参数只在保存后生效。"
                 )

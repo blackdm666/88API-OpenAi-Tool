@@ -5,6 +5,7 @@ from pathlib import Path
 from copy import deepcopy
 from .maintenance import recovery_cycle
 from .credential_vault import CredentialVault
+from .integrations import fetch_sub2api_proxy_endpoints
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -13,6 +14,7 @@ from .auth_batch import run_checked_authorization, remove_account_lines
 from tools.auth_2fa_browser import run_authorize_batch_lines_browser
 from tools.auth_2fa_live import parse_account_lines, run_authorize_batch_lines
 from .constants import DEFAULT_AUTH_TIMEOUT_SECONDS
+from .sub2api_policy import proxy_candidates
 from .oauth import browser_assisted_authorize, exchange_callback, generate_oauth_start
 from .services import refresh_record
 
@@ -220,6 +222,15 @@ class GUIAuthMixin:
         def worker():
             options = dict(workers=workers, save_dir=save_dir, save_token=save_token,
                            include_secrets=False, quiet=True, log_fn=gui_log, progress_cb=progress)
+            proxy_ids = proxy_candidates((settings.get('integrations') or {}).get('sub2api') or {})
+            if proxy_ids:
+                endpoints = fetch_sub2api_proxy_endpoints(
+                    settings, proxy_url=settings.get('http_proxy', ''), proxy_ids=proxy_ids
+                )
+                proxy_pool = [item['url'] for item in endpoints]
+                if not proxy_pool:
+                    raise ValueError('配置的 Sub2API 代理池没有可用代理，无法启动2FA授权')
+                options['proxy_pool'] = proxy_pool
             runner = run_authorize_batch_lines
             if mode == 'browser':
                 runner = run_authorize_batch_lines_browser

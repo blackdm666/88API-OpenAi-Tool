@@ -1,6 +1,6 @@
 {
   "name": "OpenAI Token Manager",
-  "version": "2.2.0-88api.25",
+  "version": "2.2.0-88api.26",
   "description": "本地OpenAI账号与Sub2API远端管理工具",
   "author": "Based on Reverse Engineering",
   "license": "Personal Use Only",
@@ -224,6 +224,14 @@
       "changes": [
         "调度列将参与调度的限流账号直接显示为限流中",
         "未参与调度的限流账号继续显示为已关闭"
+      ]
+    },
+    "2.2.0-88api.26": {
+      "date": "2026-09-18",
+      "changes": [
+        "调度状态显示为调度中，并在用量列后增加账号优先级",
+        "Sub2API右键增加远端账号编辑入口",
+        "代理池支持下拉多选，2FA协议链和浏览器链按远端代理池随机授权"
       ]
     }
   }
