@@ -4,6 +4,7 @@ import base64
 import hashlib
 import secrets
 import threading
+import time
 import urllib.parse
 import webbrowser
 from dataclasses import dataclass
@@ -154,10 +155,15 @@ class OAuthCallbackServer:
             raise RuntimeError(f"无法监听 {self.host}:{self.port}，端口可能被占用: {exc}") from exc
         threading.Thread(target=self._server.serve_forever, daemon=True).start()
 
-    def wait(self, timeout: int) -> str:
-        completed = self._event.wait(max(1, int(timeout)))
-        if not completed:
-            raise TimeoutError("等待浏览器回调超时")
+    def wait(self, timeout: int, *, cancelled: threading.Event | None = None) -> str:
+        deadline = time.monotonic() + max(1, int(timeout))
+        while not self._event.wait(0.2):
+            if cancelled is not None and cancelled.is_set():
+                raise RuntimeError("自动授权已停止")
+            if time.monotonic() >= deadline:
+                raise TimeoutError("等待浏览器回调超时")
+        if cancelled is not None and cancelled.is_set():
+            raise RuntimeError("自动授权已停止")
         return self._callback_url
 
     def close(self) -> None:
@@ -174,6 +180,7 @@ def browser_assisted_authorize(
     timeout: int = 300,
     open_browser: bool = True,
     log_fn=None,
+    cancelled: threading.Event | None = None,
 ) -> dict[str, Any]:
     def _log(message: str) -> None:
         if callable(log_fn):
@@ -189,7 +196,9 @@ def browser_assisted_authorize(
             _log("已自动打开浏览器，正在等待回调")
         else:
             _log("已启动本地回调监听，请手动打开授权 URL")
-        callback_url = server.wait(timeout)
+        callback_url = server.wait(timeout, cancelled=cancelled)
+        if cancelled is not None and cancelled.is_set():
+            raise RuntimeError("自动授权已停止")
         _log("已收到浏览器回调，正在换取 Token")
         token_data = exchange_callback(
             callback_url,

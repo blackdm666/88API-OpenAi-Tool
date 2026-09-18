@@ -328,22 +328,46 @@ class GUIAuthMixin:
         messagebox.showinfo("完成", f"Token 已保存\n{path}")
 
     def start_auto_auth(self) -> None:
+        if self.is_running() and getattr(self, 'auto_auth_running', False):
+            self.auto_auth_stop.set()
+            self.auto_auth_button.config(text='正在停止自动授权', state='disabled')
+            self.log('自动授权停止请求已提交，正在结束回调等待')
+            return
+        if self.is_running() or self.auto_refresh_running:
+            self.log('已有任务或自动维护在运行，未启动自动授权', 'warning')
+            return
         settings = self.current_settings()
         proxy = settings.get("http_proxy", "")
         timeout = int(settings.get("auto_auth_timeout_seconds") or DEFAULT_AUTH_TIMEOUT_SECONDS)
         open_browser = bool(settings.get("open_browser_on_auto_auth", True))
 
+        self.auto_auth_stop.clear()
+        self.auto_auth_running = True
+        self.auto_auth_button.config(text='停止自动授权')
+
         def worker():
-            return browser_assisted_authorize(
-                settings,
-                proxy_url=proxy,
-                timeout=timeout,
-                open_browser=open_browser,
-                log_fn=self.log,
-            )
+            try:
+                return browser_assisted_authorize(
+                    settings,
+                    proxy_url=proxy,
+                    timeout=timeout,
+                    open_browser=open_browser,
+                    log_fn=self.log,
+                    cancelled=self.auto_auth_stop,
+                )
+            except RuntimeError:
+                if self.auto_auth_stop.is_set():
+                    return {"cancelled": True}
+                raise
 
         def done(result):
-            self.set_running(False, "自动授权结束")
+            self.auto_auth_running = False
+            self.auto_auth_button.config(text='启动自动授权', state='normal')
+            stopped = self.auto_auth_stop.is_set()
+            self.set_running(False, "自动授权已停止" if stopped else "自动授权结束")
+            if stopped or result.get("cancelled"):
+                self.log('自动授权已停止')
+                return
             if result.get("error"):
                 messagebox.showerror("错误", result["error"])
                 return

@@ -1,4 +1,5 @@
 import base64
+import threading
 import unittest
 from unittest.mock import Mock, patch
 
@@ -10,9 +11,57 @@ from tools.auth_support import (
     failure_advice,
 )
 from tools.auth_2fa_browser import _wait_for_target
+from token_manager.gui_auth import GUIAuthMixin
+from token_manager.oauth import OAuthCallbackServer
 
 
 class AuthSupportTest(unittest.TestCase):
+    def test_auto_auth_button_stops_running_job(self):
+        class Harness(GUIAuthMixin):
+            def __init__(self):
+                self.running = False
+                self.auto_refresh_running = False
+                self.auto_auth_running = False
+                self.auto_auth_stop = threading.Event()
+                self.auto_auth_button = Mock()
+                self.log = Mock()
+
+            def is_running(self):
+                return self.running
+
+            def current_settings(self):
+                return {"auto_auth_timeout_seconds": 300, "open_browser_on_auto_auth": False}
+
+            def run_background(self, _status, worker, done):
+                self.running = True
+                self.worker = worker
+                self.done = done
+
+            def set_running(self, running, _status=""):
+                self.running = running
+
+        app = Harness()
+        app.start_auto_auth()
+        self.assertTrue(app.auto_auth_running)
+        self.assertFalse(app.auto_auth_stop.is_set())
+        app.start_auto_auth()
+        self.assertTrue(app.auto_auth_stop.is_set())
+        app.auto_auth_button.config.assert_called_with(
+            text="正在停止自动授权", state="disabled"
+        )
+        with patch("token_manager.gui_auth.messagebox.showerror") as show_error:
+            app.done({"cancelled": True})
+        self.assertFalse(app.auto_auth_running)
+        self.assertFalse(app.running)
+        show_error.assert_not_called()
+
+    def test_oauth_callback_wait_can_be_cancelled(self):
+        server = OAuthCallbackServer('http://127.0.0.1:1455/auth/callback')
+        cancelled = threading.Event()
+        cancelled.set()
+        with self.assertRaisesRegex(RuntimeError, '自动授权已停止'):
+            server.wait(30, cancelled=cancelled)
+
     def test_rfc6238_vectors(self):
         secret = base64.b32encode(b"12345678901234567890").decode()
         for stamp, expected in [

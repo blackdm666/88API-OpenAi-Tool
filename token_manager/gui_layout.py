@@ -270,7 +270,8 @@ class GUILayoutMixin:
         ttk.Checkbutton(auto_frame, text="自动打开浏览器", variable=self.open_browser_var).pack(anchor=tk.W)
         ttk.Label(auto_frame, text="回调等待秒数", style="Card.TLabel").pack(anchor=tk.W, pady=(8, 4))
         ttk.Spinbox(auto_frame, from_=30, to=1800, textvariable=self.auto_auth_timeout_var, width=10).pack(anchor=tk.W)
-        ttk.Button(auto_frame, text="启动自动授权", command=self.start_auto_auth, style="Primary.TButton").pack(anchor=tk.W, pady=(10, 0))
+        self.auto_auth_button = ttk.Button(auto_frame, text="启动自动授权", command=self.start_auto_auth, style="Primary.TButton")
+        self.auto_auth_button.pack(anchor=tk.W, pady=(10, 0))
 
     def _build_convert_tab(self, parent) -> None:
         parent.columnconfigure(0, weight=1)

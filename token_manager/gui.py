@@ -110,6 +110,8 @@ class TokenManagerGUI(
         self._running_job_lock = threading.Lock()
         self.auto_refresh_running = False
         self.maintenance_stop = threading.Event()
+        self.auto_auth_running = False
+        self.auto_auth_stop = threading.Event()
         self.auto_refresh_thread: threading.Thread | None = None
         self.preview_text_value = ""
 
@@ -179,6 +181,11 @@ class TokenManagerGUI(
 
     def request_close(self):
         from tkinter import messagebox
+        if self.auto_auth_running:
+            self.auto_auth_stop.set()
+            self.status_var.set('正在停止自动授权，结束后关闭...')
+            self.root.after(200, self.request_close)
+            return
         if self.auto_refresh_running:
             self.maintenance_stop.set()
             self.status_var.set('正在安全停止维护，网络请求返回后关闭…')
