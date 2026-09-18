@@ -73,6 +73,9 @@ def upload_options(config: dict[str, Any]) -> dict[str, Any]:
     mode = str(config.get("codex_fingerprint_mode", "off"))
     if mode not in ("off", "device", "session", "full"):
         raise ValueError("设备指纹模式无效")
+    ws_mode = str(config.get('ws_mode', 'ctx_pool'))
+    if ws_mode not in ('off', 'ctx_pool', 'passthrough', 'http_bridge'):
+        raise ValueError('WS mode 无效')
     proxy = str(config.get("proxy_id") or "").strip()
     if proxy and (not proxy.isdigit() or int(proxy) < 0):
         raise ValueError("代理 ID 必须为正整数；0或留空表示直连")
@@ -83,7 +86,11 @@ def upload_options(config: dict[str, Any]) -> dict[str, Any]:
         "rate_multiplier": rate,
         "proxy_id": int(proxy) if proxy and int(proxy) else None,
         "auto_pause_on_expired": bool(config.get("auto_pause_on_expired", True)),
-        "extra": {"codex_fingerprint_mode": mode},
+        "extra": {
+            "codex_fingerprint_mode": mode,
+            "openai_oauth_responses_websockets_v2_mode": ws_mode,
+            "openai_oauth_responses_websockets_v2_enabled": ws_mode != 'off',
+        },
     }
 
 

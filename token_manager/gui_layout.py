@@ -86,25 +86,22 @@ class GUILayoutMixin:
 
         upload_frame = ttk.Frame(parent, style="Card.TFrame")
         upload_frame.grid(row=1, column=0, sticky="ew", pady=(0, 8))
-        for column in range(6):
+        for column in range(3):
             upload_frame.columnconfigure(column, weight=1)
-        ttk.Label(upload_frame, text="上传目标", style="Card.TLabel").grid(row=0, column=0, sticky="w", padx=3, pady=3)
-        ttk.Combobox(
-            upload_frame,
-            textvariable=self.upload_target_var,
-            values=["cpa", "sub2api"],
-            state="readonly",
-        ).grid(row=0, column=1, sticky="ew", padx=3, pady=3)
-        ttk.Button(upload_frame, text="上传选中", command=self.upload_selected).grid(row=0, column=2, sticky="ew", padx=3, pady=3)
-        ttk.Button(upload_frame, text="上传当前", command=self.upload_all).grid(row=0, column=3, sticky="ew", padx=3, pady=3)
-        ttk.Button(upload_frame, text="上传配置", command=self.open_sub2api_upload_settings).grid(row=1, column=0, columnspan=2, sticky="ew", padx=3, pady=3)
-        ttk.Button(upload_frame, text="监控选中", command=lambda: self.set_recovery_selected(True)).grid(row=1, column=2, columnspan=2, sticky="ew", padx=3, pady=3)
-        ttk.Button(upload_frame, text="取消监控", command=lambda: self.set_recovery_selected(False)).grid(row=1, column=4, columnspan=2, sticky="ew", padx=3, pady=3)
+        for row, column, label, command in [
+            (0, 0, '上传选中', self.upload_selected),
+            (0, 1, '上传当前', self.upload_all),
+            (0, 2, '上传配置', self.open_sub2api_upload_settings),
+            (1, 0, '监控选中', lambda: self.set_recovery_selected(True)),
+            (1, 1, '取消监控', lambda: self.set_recovery_selected(False)),
+            (1, 2, '导入 / 导出', lambda: self.right_notebook.select(self.convert_tab)),
+        ]:
+            ttk.Button(upload_frame, text=label, command=command).grid(row=row, column=column, sticky='ew', padx=3, pady=3)
 
         filter_frame = ttk.Frame(parent, style="Card.TFrame")
         filter_frame.grid(row=2, column=0, sticky="ew", pady=(0, 8))
         for column in range(6):
-            filter_frame.columnconfigure(column, weight=1)
+            filter_frame.columnconfigure(column, weight=1, minsize=0)
         ttk.Label(filter_frame, text="搜索", style="Card.TLabel").grid(row=0, column=0, sticky="w", padx=3, pady=3)
         search_entry = ttk.Entry(filter_frame, textvariable=self.search_var)
         search_entry.grid(row=0, column=1, sticky="ew", padx=3, pady=3)
@@ -138,7 +135,7 @@ class GUILayoutMixin:
         ttk.Button(filter_frame, text="Team", command=lambda: self.apply_quick_filter("Team")).grid(row=1, column=1, sticky="ew", padx=3, pady=3)
         ttk.Button(filter_frame, text="Plus", command=lambda: self.apply_quick_filter("Plus")).grid(row=1, column=2, sticky="ew", padx=3, pady=3)
         ttk.Button(filter_frame, text="Free", command=lambda: self.apply_quick_filter("Free")).grid(row=1, column=3, sticky="ew", padx=3, pady=3)
-        ttk.Button(filter_frame, text="上传异常", command=lambda: self.apply_quick_filter("全部标签", "上传异常")).grid(row=1, column=4, sticky="ew", padx=3, pady=3)
+        ttk.Button(filter_frame, text="异常", command=lambda: self.apply_quick_filter("全部标签", "上传异常")).grid(row=1, column=4, sticky="ew", padx=3, pady=3)
         ttk.Button(filter_frame, text="清空筛选", command=self.clear_filters).grid(row=1, column=5, sticky="ew", padx=3, pady=3)
         ttk.Label(filter_frame, textvariable=self.stats_var, style="Stats.TLabel").grid(row=2, column=0, columnspan=6, sticky="w", padx=3, pady=(4, 0))
 
@@ -179,15 +176,13 @@ class GUILayoutMixin:
         self.auth_tab = ttk.Frame(self.right_notebook, padding=8, style="Card.TFrame")
         self.auth2fa_tab = ttk.Frame(self.right_notebook, padding=8, style="Card.TFrame")
         self.convert_tab = ttk.Frame(self.right_notebook, padding=8, style="Card.TFrame")
-        self.cpa_tab = ttk.Frame(self.right_notebook, padding=8, style="Card.TFrame")
         self.sub2api_tab = ttk.Frame(self.right_notebook, padding=8, style="Card.TFrame")
         self.settings_tab = ttk.Frame(self.right_notebook, padding=8, style="Card.TFrame")
 
         self.right_notebook.add(self.detail_tab, text="详情")
         self.right_notebook.add(self.auth_tab, text="授权")
         self.right_notebook.add(self.auth2fa_tab, text="2FA授权")
-        self.right_notebook.add(self.convert_tab, text="转换")
-        self.right_notebook.add(self.cpa_tab, text="CPA")
+        self.right_notebook.add(self.convert_tab, text="导入 / 导出")
         self.right_notebook.add(self.sub2api_tab, text="Sub2API")
         self.right_notebook.add(self.settings_tab, text="设置")
 
@@ -195,7 +190,6 @@ class GUILayoutMixin:
         self._build_auth_tab(self.auth_tab)
         self._build_auth2fa_tab(self.auth2fa_tab)
         self._build_convert_tab(self.convert_tab)
-        self._build_cpa_tab(self.cpa_tab)
         self._build_sub2api_tab(self.sub2api_tab)
         self._build_settings_tab(self.settings_tab)
         self.right_notebook.select(self.sub2api_tab)
@@ -226,7 +220,6 @@ class GUILayoutMixin:
             detail_actions.columnconfigure(column, weight=1)
         ttk.Button(detail_actions, text="复制 AT", command=self.copy_access_token).grid(row=0, column=0, sticky="ew", padx=3, pady=3)
         ttk.Button(detail_actions, text="复制 RT", command=self.copy_refresh_token).grid(row=0, column=1, sticky="ew", padx=3, pady=3)
-        ttk.Button(detail_actions, text="预览 CPA", command=lambda: self.build_preview("CPA")).grid(row=0, column=2, sticky="ew", padx=3, pady=3)
         ttk.Button(detail_actions, text="预览 Sub2API", command=lambda: self.build_preview("Sub2API")).grid(row=0, column=3, sticky="ew", padx=3, pady=3)
 
     def _build_auth_tab(self, parent) -> None:
@@ -271,20 +264,10 @@ class GUILayoutMixin:
         for column in range(6):
             controls.columnconfigure(column, weight=1)
         ttk.Label(controls, text="预览格式", style="Card.TLabel").grid(row=0, column=0, sticky="w", padx=3, pady=3)
-        ttk.Combobox(
-            controls,
-            textvariable=self.preview_format_var,
-            values=["CPA", "Sub2API"],
-            state="readonly",
-        ).grid(row=0, column=1, sticky="ew", padx=3, pady=3)
+        ttk.Label(controls, text="Sub2API", style="Card.TLabel").grid(row=0, column=1, sticky="ew", padx=3, pady=3)
         ttk.Button(controls, text="生成预览", command=self.build_preview_from_var).grid(row=0, column=2, sticky="ew", padx=3, pady=3)
         ttk.Button(controls, text="复制预览", command=self.copy_preview).grid(row=0, column=3, sticky="ew", padx=3, pady=3)
-        ttk.Combobox(
-            controls,
-            textvariable=self.import_source_var,
-            values=["CPA", "Sub2API"],
-            state="readonly",
-        ).grid(row=0, column=4, sticky="ew", padx=3, pady=3)
+        ttk.Label(controls, text="Sub2API", style="Card.TLabel").grid(row=0, column=4, sticky="ew", padx=3, pady=3)
         ttk.Button(controls, text="导入剪贴板", command=self.import_from_clipboard).grid(row=0, column=5, sticky="ew", padx=3, pady=3)
         ttk.Button(controls, text="导入文件", command=self.import_from_file).grid(row=1, column=5, sticky="ew", padx=3, pady=3)
 
@@ -349,134 +332,8 @@ class GUILayoutMixin:
         footer.grid(row=2, column=0, sticky="ew", pady=(8, 0))
         ttk.Label(footer, textvariable=self.auth2fa_output_var, style="CardSubtle.TLabel").pack(side=tk.LEFT)
 
-    def _build_cpa_tab(self, parent) -> None:
-        parent.columnconfigure(0, weight=1)
-        parent.rowconfigure(1, weight=1)
 
-        top_bar = ttk.Frame(parent, style="Card.TFrame")
-        top_bar.grid(row=0, column=0, sticky="ew", pady=(0, 8))
-        ttk.Button(top_bar, text="刷新远端列表", command=self.refresh_cpa_accounts, style="Primary.TButton").pack(side=tk.LEFT)
-        ttk.Button(top_bar, text="导入到 Tokens", command=self.import_cpa_to_tokens).pack(side=tk.LEFT, padx=6)
-        self.cpa_stats_var = tk.StringVar(value="CPA 未加载")
-        ttk.Label(top_bar, textvariable=self.cpa_stats_var, style="Stats.TLabel").pack(side=tk.RIGHT)
 
-        notebook = ttk.Notebook(parent)
-        notebook.grid(row=1, column=0, sticky="nsew")
-
-        pool_tab = ttk.Frame(notebook, padding=8, style="Card.TFrame")
-        invalidated_tab = ttk.Frame(notebook, padding=8, style="Card.TFrame")
-        notebook.add(pool_tab, text="远端账号池")
-        notebook.add(invalidated_tab, text="封禁记录")
-
-        self._build_cpa_pool_tab(pool_tab)
-        self._build_cpa_invalidated_tab(invalidated_tab)
-
-    def _build_cpa_pool_tab(self, parent) -> None:
-        parent.columnconfigure(0, weight=1)
-        parent.rowconfigure(2, weight=1, minsize=200)
-
-        actions = ttk.Frame(parent, style="Card.TFrame")
-        actions.grid(row=0, column=0, sticky="ew", pady=(0, 8))
-        for column in range(5):
-            actions.columnconfigure(column, weight=1)
-        ttk.Button(actions, text="刷新选中令牌", command=self.refresh_selected_cpa_remote).grid(row=0, column=0, sticky="ew", padx=3, pady=3)
-        ttk.Button(actions, text="刷新当前筛选", command=self.refresh_filtered_cpa_remote).grid(row=0, column=1, sticky="ew", padx=3, pady=3)
-        ttk.Button(actions, text="删除选中", command=self.delete_selected_cpa_records).grid(row=0, column=2, sticky="ew", padx=3, pady=3)
-        ttk.Button(actions, text="禁用选中", command=lambda: self.set_selected_cpa_disabled(True)).grid(row=0, column=3, sticky="ew", padx=3, pady=3)
-        ttk.Button(actions, text="启用选中", command=lambda: self.set_selected_cpa_disabled(False)).grid(row=0, column=4, sticky="ew", padx=3, pady=3)
-
-        filters = ttk.Frame(parent, style="Card.TFrame")
-        filters.grid(row=1, column=0, sticky="ew", pady=(0, 8))
-        for column in range(6):
-            filters.columnconfigure(column, weight=1)
-        ttk.Label(filters, text="搜索", style="Card.TLabel").grid(row=0, column=0, sticky="w", padx=3, pady=3)
-        entry = ttk.Entry(filters, textvariable=self.cpa_search_var)
-        entry.grid(row=0, column=1, sticky="ew", padx=3, pady=3)
-        entry.bind("<KeyRelease>", lambda _e: self.populate_cpa_tree())
-        ttk.Label(filters, text="标签", style="Card.TLabel").grid(row=0, column=2, sticky="w", padx=3, pady=3)
-        plan = ttk.Combobox(filters, textvariable=self.cpa_plan_filter_var, values=["全部标签", "Team", "Plus", "Free", "Pro", "Enterprise", "Unknown"], state="readonly")
-        plan.grid(row=0, column=3, sticky="ew", padx=3, pady=3)
-        plan.bind("<<ComboboxSelected>>", lambda _e: self.populate_cpa_tree())
-        ttk.Label(filters, text="状态", style="Card.TLabel").grid(row=0, column=4, sticky="w", padx=3, pady=3)
-        status = ttk.Combobox(filters, textvariable=self.cpa_status_filter_var, values=["全部状态", "active", "error", "refreshing", "pending", "disabled", "unavailable"], state="readonly")
-        status.grid(row=0, column=5, sticky="ew", padx=3, pady=3)
-        status.bind("<<ComboboxSelected>>", lambda _e: self.populate_cpa_tree())
-        ttk.Button(filters, text="清空筛选", command=self.clear_cpa_filters).grid(row=1, column=5, sticky="ew", padx=3, pady=3)
-        self.cpa_pool_stats_var = tk.StringVar(value="")
-        ttk.Label(filters, textvariable=self.cpa_pool_stats_var, style="Stats.TLabel").grid(row=1, column=0, columnspan=5, sticky="w", padx=3, pady=3)
-
-        center = ttk.Frame(parent, style="Card.TFrame")
-        center.grid(row=2, column=0, sticky="nsew")
-        center.columnconfigure(0, weight=1)
-        center.rowconfigure(0, weight=1)
-        self.cpa_tree = ttk.Treeview(center, columns=("email", "plan", "status", "flags", "last_refresh", "next_retry", "message"), show="headings", selectmode="extended")
-        self.cpa_tree.heading("email", text="邮箱")
-        self.cpa_tree.heading("plan", text="标签")
-        self.cpa_tree.heading("status", text="状态")
-        self.cpa_tree.heading("flags", text="标记")
-        self.cpa_tree.heading("last_refresh", text="远端刷新")
-        self.cpa_tree.heading("next_retry", text="下次重试")
-        self.cpa_tree.heading("message", text="状态摘要")
-        self.cpa_tree.column("email", width=220, stretch=True)
-        self.cpa_tree.column("plan", width=76, stretch=False, anchor=tk.CENTER)
-        self.cpa_tree.column("status", width=88, stretch=False, anchor=tk.CENTER)
-        self.cpa_tree.column("flags", width=90, stretch=False, anchor=tk.CENTER)
-        self.cpa_tree.column("last_refresh", width=130, stretch=False)
-        self.cpa_tree.column("next_retry", width=150, stretch=False)
-        self.cpa_tree.column("message", width=240, stretch=True)
-        cpa_scroll_y = ttk.Scrollbar(center, orient=tk.VERTICAL, command=self.cpa_tree.yview)
-        cpa_scroll_x = ttk.Scrollbar(center, orient=tk.HORIZONTAL, command=self.cpa_tree.xview)
-        self.cpa_tree.configure(yscrollcommand=cpa_scroll_y.set, xscrollcommand=cpa_scroll_x.set)
-        self.cpa_tree.grid(row=0, column=0, sticky="nsew")
-        cpa_scroll_y.grid(row=0, column=1, sticky="ns")
-        cpa_scroll_x.grid(row=1, column=0, sticky="ew")
-        self.cpa_tree.bind("<<TreeviewSelect>>", self.on_cpa_selection_changed)
-        self.cpa_tree.tag_configure("error", foreground="#a94438")
-        self.cpa_tree.tag_configure("invalidated", foreground="#a94438")
-        self.cpa_tree.tag_configure("warning", foreground=self.palette["accent"])
-
-        self.cpa_detail_text = tk.Text(parent, wrap=tk.WORD, height=4, font=("Consolas", 9), bg=self.palette["card"], fg=self.palette["text"], relief="flat", insertbackground=self.palette["text"], highlightthickness=1, highlightbackground=self.palette["border"], padx=10, pady=10)
-        self.cpa_detail_text.grid(row=3, column=0, sticky="ew", pady=(8, 0))
-        self.cpa_detail_text.config(state=tk.DISABLED)
-
-    def _build_cpa_invalidated_tab(self, parent) -> None:
-        parent.columnconfigure(0, weight=1)
-        parent.rowconfigure(1, weight=1)
-
-        actions = ttk.Frame(parent, style="Card.TFrame")
-        actions.grid(row=0, column=0, sticky="ew", pady=(0, 8))
-        ttk.Button(actions, text="删除选中封禁", command=self.delete_selected_invalidated_cpa_records, style="Primary.TButton").pack(side=tk.LEFT)
-        ttk.Button(actions, text="删除全部封禁", command=self.delete_all_invalidated_cpa_records).pack(side=tk.LEFT, padx=6)
-        self.cpa_invalidated_stats_var = tk.StringVar(value="封禁记录 0")
-        ttk.Label(actions, textvariable=self.cpa_invalidated_stats_var, style="Stats.TLabel").pack(side=tk.RIGHT)
-
-        frame = ttk.Frame(parent, style="Card.TFrame")
-        frame.grid(row=1, column=0, sticky="nsew")
-        frame.columnconfigure(0, weight=1)
-        frame.rowconfigure(0, weight=1)
-        self.cpa_invalidated_tree = ttk.Treeview(frame, columns=("email", "plan", "status", "next_retry", "message"), show="headings", selectmode="extended")
-        self.cpa_invalidated_tree.heading("email", text="邮箱")
-        self.cpa_invalidated_tree.heading("plan", text="标签")
-        self.cpa_invalidated_tree.heading("status", text="状态")
-        self.cpa_invalidated_tree.heading("next_retry", text="下次重试")
-        self.cpa_invalidated_tree.heading("message", text="封禁信息")
-        self.cpa_invalidated_tree.column("email", width=220, stretch=True)
-        self.cpa_invalidated_tree.column("plan", width=76, stretch=False, anchor=tk.CENTER)
-        self.cpa_invalidated_tree.column("status", width=88, stretch=False, anchor=tk.CENTER)
-        self.cpa_invalidated_tree.column("next_retry", width=150, stretch=False)
-        self.cpa_invalidated_tree.column("message", width=300, stretch=True)
-        invalid_scroll_y = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=self.cpa_invalidated_tree.yview)
-        invalid_scroll_x = ttk.Scrollbar(frame, orient=tk.HORIZONTAL, command=self.cpa_invalidated_tree.xview)
-        self.cpa_invalidated_tree.configure(yscrollcommand=invalid_scroll_y.set, xscrollcommand=invalid_scroll_x.set)
-        self.cpa_invalidated_tree.grid(row=0, column=0, sticky="nsew")
-        invalid_scroll_y.grid(row=0, column=1, sticky="ns")
-        invalid_scroll_x.grid(row=1, column=0, sticky="ew")
-        self.cpa_invalidated_tree.bind("<<TreeviewSelect>>", self.on_cpa_invalidated_selection_changed)
-        self.cpa_invalidated_tree.tag_configure("invalidated", foreground="#a94438")
-
-        self.cpa_invalidated_detail_text = tk.Text(parent, wrap=tk.WORD, height=4, font=("Consolas", 9), bg=self.palette["card"], fg=self.palette["text"], relief="flat", insertbackground=self.palette["text"], highlightthickness=1, highlightbackground=self.palette["border"], padx=10, pady=10)
-        self.cpa_invalidated_detail_text.grid(row=2, column=0, sticky="ew", pady=(8, 0))
-        self.cpa_invalidated_detail_text.config(state=tk.DISABLED)
 
     def _build_sub2api_tab(self, parent) -> None:
         parent.columnconfigure(0, weight=1)
@@ -522,9 +379,8 @@ class GUILayoutMixin:
         entry.grid(row=0, column=1, sticky="ew", padx=3, pady=3)
         entry.bind("<KeyRelease>", lambda _e: self.populate_sub2api_tree())
         ttk.Label(filters, text="分组", style="Card.TLabel").grid(row=0, column=2, sticky="w", padx=3, pady=3)
-        self.sub2api_group_combo = ttk.Combobox(filters, textvariable=self.sub2api_group_filter_var, values=["全部分组"], state="readonly")
+        self.sub2api_group_combo = ttk.Button(filters, textvariable=self.sub2api_group_filter_var, command=self.choose_sub2api_group_filters)
         self.sub2api_group_combo.grid(row=0, column=3, sticky="ew", padx=3, pady=3)
-        self.sub2api_group_combo.bind("<<ComboboxSelected>>", lambda _e: self.populate_sub2api_tree())
         ttk.Label(filters, text="状态", style="Card.TLabel").grid(row=0, column=4, sticky="w", padx=3, pady=3)
         status = ttk.Combobox(filters, textvariable=self.sub2api_status_filter_var, values=["全部状态", "active", "inactive", "error", "invalidated", "unschedulable"], state="readonly")
         status.grid(row=0, column=5, sticky="ew", padx=3, pady=3)
@@ -619,11 +475,9 @@ class GUILayoutMixin:
 
         basic_tab = ttk.Frame(settings_notebook, padding=8, style="Card.TFrame")
         oauth_tab = ttk.Frame(settings_notebook, padding=8, style="Card.TFrame")
-        cpa_tab = ttk.Frame(settings_notebook, padding=8, style="Card.TFrame")
         sub2api_tab = ttk.Frame(settings_notebook, padding=8, style="Card.TFrame")
         settings_notebook.add(basic_tab, text="基础")
         settings_notebook.add(oauth_tab, text="OAuth")
-        settings_notebook.add(cpa_tab, text="CPA")
         settings_notebook.add(sub2api_tab, text="Sub2API")
 
         basic_frame = ttk.LabelFrame(basic_tab, text="基础设置", padding=10, style="Card.TLabelframe")
@@ -653,11 +507,6 @@ class GUILayoutMixin:
         self._add_labeled_entry(browser_frame, "浏览器路径", self.browser_path_var)
         self._add_labeled_spin(browser_frame, "调试起始端口", self.browser_debug_port_var, 1024, 65535)
 
-        cpa_frame = ttk.LabelFrame(cpa_tab, text="CPA 配置", padding=10, style="Card.TLabelframe")
-        cpa_frame.pack(fill=tk.BOTH, expand=True)
-        self._add_labeled_entry(cpa_frame, "CPA URL", self.cpa_url_var)
-        self._add_labeled_entry(cpa_frame, "CPA Key", self.cpa_key_var)
-        self._add_labeled_entry(cpa_frame, "CPA 容器名", self.cpa_container_var)
 
         sub2api_frame = ttk.LabelFrame(sub2api_tab, text="Sub2API 配置", padding=10, style="Card.TLabelframe")
         sub2api_frame.pack(fill=tk.BOTH, expand=True)

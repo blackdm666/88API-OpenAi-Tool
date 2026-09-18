@@ -145,7 +145,16 @@ class GUICommonMixin:
             bordercolor=self.palette["border"],
             arrowsize=14,
         )
-        style.map("TCombobox", fieldbackground=[("readonly", self.palette["card"])], selectbackground=[("readonly", self.palette["card"])])
+        style.map('TCombobox',
+                  foreground=[('disabled', self.palette['muted']), ('readonly', self.palette['text'])],
+                  fieldbackground=[('readonly', self.palette['card'])],
+                  selectbackground=[('readonly', self.palette['primary_soft'])],
+                  selectforeground=[('readonly', self.palette['text'])])
+        self.root.option_add('*TCombobox*Listbox.background', self.palette['card'])
+        self.root.option_add('*TCombobox*Listbox.foreground', self.palette['text'])
+        self.root.option_add('*TCombobox*Listbox.selectBackground', self.palette['primary'])
+        self.root.option_add('*TCombobox*Listbox.selectForeground', '#ffffff')
+        self.root.option_add('*TCombobox*Listbox.font', base_font)
         style.configure(
             "Treeview",
             rowheight=29,
@@ -248,11 +257,6 @@ class GUICommonMixin:
             "scope": self.oauth_scope_var.get().strip(),
         }
         config["integrations"] = {
-            "cpa": {
-                "api_url": self.cpa_url_var.get().strip(),
-                "api_key": self.cpa_key_var.get().strip(),
-                "container_name": self.cpa_container_var.get().strip() or "cli-proxy-api",
-            },
             "sub2api": {
                 **sub2api_existing,
                 "auth_mode": self.sub2api_auth_mode_var.get(),

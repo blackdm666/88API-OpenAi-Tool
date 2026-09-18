@@ -6,7 +6,7 @@
   <p>一个面向多账号运维场景的 OpenAI Token 管理工具</p>
 
   <p>
-    <img src="https://img.shields.io/badge/version-2.2.0--88api.1-2563eb?style=for-the-badge" alt="version">
+    <img src="https://img.shields.io/badge/version-2.2.0--88api.2-2563eb?style=for-the-badge" alt="version">
     <img src="https://img.shields.io/badge/python-3.11+-1f6feb?style=for-the-badge" alt="python">
     <img src="https://img.shields.io/badge/gui-tkinter-c47a22?style=for-the-badge" alt="gui">
     <img src="https://img.shields.io/badge/auth-protocol%20%7C%20browser-111827?style=for-the-badge" alt="auth">
@@ -27,7 +27,7 @@
 
 > 这不是单纯的 token 存储器。
 >
-> 它把本地账号池、批量刷新、手动授权、2FA 批量授权、CPA 远端管理、Sub2API 远端管理、格式互转、导出整理和日志追踪放到了一套 GUI 里。
+> 它把本地账号池、批量刷新、手动授权、2FA 批量授权、Sub2API 远端管理、格式互转、导出整理和日志追踪放到了一套 GUI 里。
 
 ## 预览
 
@@ -47,7 +47,7 @@
   <tr>
     <td width="50%">
       <h3>远端管理</h3>
-      <p>CPA 和 Sub2API 都有单独管理页，支持筛选、刷新、删除、封禁或失效整理。</p>
+      <p>Sub2API 都有单独管理页，支持筛选、刷新、删除、封禁或失效整理。</p>
     </td>
     <td width="50%">
       <h3>链路调试</h3>
@@ -65,9 +65,8 @@
 | 浏览器辅助授权 | 本地监听回调，自动打开浏览器，适合单账号半自动流程 |
 | 2FA 协议链 | 纯协议批量授权，速度快，适合大量账号并发 |
 | 2FA 浏览器链 | 真实浏览器批量授权，更贴近真实页面环境 |
-| CPA 管理 | 远端账号池管理、批量刷新、封禁记录整理、导回本地 |
 | Sub2API 管理 | 远端账号池管理、状态筛选、失效记录清理 |
-| 转换与导出 | CPA 单账号导出，Sub2API 聚合导出，支持文件和剪贴板回导 |
+| 转换与导出 | Sub2API 聚合导出，支持文件和剪贴板回导 |
 | 链路监听 | Flow Probe Studio 和登录监听脚本，用来抓真实请求链 |
 
 ## 双授权链
@@ -81,7 +80,6 @@ flowchart LR
     D --> E
     E --> F[code 换 token]
     F --> G[tokens 本地账号池]
-    G --> H[CPA 导出]
     G --> I[Sub2API 导出]
     G --> J[远端上传与维护]
 ```
@@ -90,7 +88,7 @@ flowchart LR
 
 适合快刷和高并发批量补授权。
 
-它直接走协议请求，默认通过 `2fa.live` 获取 TOTP，再走 OAuth 回调换 token。
+它直接走协议请求，通过本机RFC6238算法生成TOTP，密匙不发往第三方网站，再走 OAuth 回调换 token。
 
 ### 浏览器链
 
@@ -103,7 +101,6 @@ flowchart LR
 | 路径 | 用途 |
 | --- | --- |
 | `tokens/` | 本地真实账号池主数据 |
-| `outputs/CPA/` | CPA 格式单账号导出 |
 | `outputs/Sub2API/` | Sub2API 导出，整理后是聚合文件 |
 | `outputs/auth_2fa_live/` | 协议链批量授权报告 |
 | `outputs/auth_2fa_browser/` | 浏览器链批量授权报告和浏览器 profile |
@@ -161,7 +158,7 @@ python build.py --clean --name OpenAI-Token-Manager --entry-point main.py
 
 ### 远端池维护
 
-先刷新 CPA 或 Sub2API 远端列表，再筛选、刷新、删除、整理封禁或失效记录，必要时导回本地。
+先刷新 Sub2API 远端列表，再筛选、刷新、删除、整理封禁或失效记录，必要时导回本地。
 
 ## 工具链
 
@@ -196,7 +193,7 @@ python build.py --clean --name OpenAI-Token-Manager --entry-point main.py
 <details>
   <summary><strong>看到 token invalidated 或 Your authentication token has been invalidated</strong></summary>
   <br>
-  这类账号会被 CPA 和 Sub2API 的失效模块单独归类，方便集中删除。
+  这类账号会被 Sub2API 的失效模块单独归类，方便集中删除。
 </details>
 
 ## 文档

@@ -50,11 +50,6 @@ def default_config() -> dict[str, Any]:
             "scope": DEFAULT_OAUTH_SCOPE,
         },
         "integrations": {
-            "cpa": {
-                "api_url": "",
-                "api_key": "",
-                "container_name": "cli-proxy-api",
-            },
             "sub2api": {
                 "api_url": "",
                 "api_key": "",
@@ -65,6 +60,7 @@ def default_config() -> dict[str, Any]:
                 "rate_multiplier": 1,
                 "proxy_id": None,
                 "codex_fingerprint_mode": "off",
+                "ws_mode": "ctx_pool",
                 "auto_pause_on_expired": True,
                 "admin_email": "",
                 "admin_password": "",
@@ -91,6 +87,7 @@ def _migrate_legacy_config(raw: dict[str, Any]) -> dict[str, Any]:
     if migrated.get("custom_scan_root") and not migrated.get("tokens_dir"):
         root = Path(str(migrated["custom_scan_root"])).expanduser()
         migrated["tokens_dir"] = str(root if root.name.lower() == "tokens" else root / "tokens")
+    (migrated.get("integrations") or {}).pop("cpa", None)
     return migrated
 
 

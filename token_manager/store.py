@@ -261,9 +261,7 @@ class TokenStore:
 
     def export_payload(self, email: str, target: str, payload: dict[str, Any]) -> Path:
         label = str(target or "unknown").strip()
-        if label.lower() == "cpa":
-            label = "CPA"
-        elif label.lower() == "sub2api":
+        if label.lower() == "sub2api":
             label = "Sub2API"
         export_dir = self._ensure_output_dir(label)
         export_path = export_dir / f"{safe_email_filename(email)}.json"
@@ -272,9 +270,7 @@ class TokenStore:
 
     def export_named_payload(self, target: str, filename: str, payload: Any) -> Path:
         label = str(target or "unknown").strip()
-        if label.lower() == "cpa":
-            label = "CPA"
-        elif label.lower() == "sub2api":
+        if label.lower() == "sub2api":
             label = "Sub2API"
         export_dir = self._ensure_output_dir(label)
         export_path = export_dir / str(filename).strip()
@@ -283,9 +279,7 @@ class TokenStore:
 
     def cleanup_target_json_files(self, target: str, *, keep_prefixes: tuple[str, ...] = ()) -> int:
         label = str(target or "unknown").strip()
-        if label.lower() == "cpa":
-            label = "CPA"
-        elif label.lower() == "sub2api":
+        if label.lower() == "sub2api":
             label = "Sub2API"
         export_dir = self._ensure_output_dir(label)
         removed = 0

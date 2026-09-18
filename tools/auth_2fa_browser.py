@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tools.auth_support import workspace_from_session, continuation_without_orgs, failure_advice
+
 import argparse
 import hashlib
 import json
@@ -41,7 +43,7 @@ from tools.auth_2fa_live import (
     _sanitize_account_payload,
     _sanitize_log_entry,
     _select_effective_egress,
-    _select_workspace,
+    _parse_auth_cookie,
     _snippet,
     _start_to_dict,
     _timestamp_slug,
@@ -271,7 +273,7 @@ def _pick_target(targets: list[TargetInfo]) -> TargetInfo:
     return filtered[0]
 
 
-def _wait_for_target(debug_port: int, timeout: int) -> TargetInfo:
+def _wait_for_target(debug_port: int, timeout: int, process=None) -> TargetInfo:
     deadline = time.time() + max(5, int(timeout))
     last_error = ""
     while time.time() < deadline:
@@ -281,6 +283,8 @@ def _wait_for_target(debug_port: int, timeout: int) -> TargetInfo:
                 return _pick_target(targets)
         except Exception as exc:
             last_error = str(exc)
+        if process is not None and process.poll() is not None:
+            raise RuntimeError(f"浏览器进程已退出（退出码{process.returncode}），调试端口未建立；请核对浏览器路径和profile占用")
         time.sleep(0.8)
     raise RuntimeError(f"浏览器调试端口没接上 {debug_port} {last_error}".strip())
 
@@ -544,7 +548,7 @@ def _friendly_message(entry: dict[str, Any]) -> str:
 def _emit_log(entry: dict[str, Any], *, quiet: bool, include_secrets: bool, log_fn: Callable[[str], None] | None = None) -> None:
     sanitized = _sanitize_log_entry(entry, include_secrets=include_secrets)
     error = str(sanitized.get("error") or "")
-    message = f"[{str(sanitized.get('step') or 'error')}] 小翻车了 {error}" if error else _friendly_message(sanitized)
+    message = f"[{str(sanitized.get('step') or 'error')}] 失败：{error}。{failure_advice(error)}" if error else _friendly_message(sanitized)
     if callable(log_fn):
         log_fn(message)
     if not quiet:
@@ -872,7 +876,8 @@ def authorize_account_browser(
     egress_end = dict(egress_start)
     egress_drift = False
     egress = _select_effective_egress(egress_start, egress_end)
-    profile_dir = _default_profile_root(save_dir) / _sanitize_profile_name(account.email)
+    import uuid
+    profile_dir = _default_profile_root(save_dir) / (_sanitize_profile_name(account.email) + "_" + uuid.uuid4().hex[:10])
     profile_dir.mkdir(parents=True, exist_ok=True)
     resolved_debug_port = int(debug_port or int(settings.get("browser_auth_start_port") or DEFAULT_DEBUG_PORT_BASE))
 
@@ -908,7 +913,7 @@ def authorize_account_browser(
             log_fn=log_fn,
         )
 
-        target = _wait_for_target(resolved_debug_port, 35)
+        target = _wait_for_target(resolved_debug_port, 35, browser_process)
         client = CDPClient(target.web_socket_debugger_url)
         client.call("Page.enable")
         client.call("Runtime.enable")
@@ -1052,10 +1057,9 @@ def authorize_account_browser(
             log_fn=log_fn,
         )
 
-        auth_cookie = _wait_for_cookie_value(client, AUTH_BASE_URL, "oai-client-auth-session", 20)
-        if not auth_cookie:
-            raise RuntimeError("没有拿到 oai-client-auth-session")
-        workspace_id = _select_workspace(auth_cookie)
+        session_info = verify_payload.get("oai-client-auth-session")
+        auth_cookie = "" if isinstance(session_info, dict) and session_info.get("workspaces") else _wait_for_cookie_value(client, AUTH_BASE_URL, "oai-client-auth-session", 20)
+        workspace_id = workspace_from_session(verify_payload, _parse_auth_cookie(auth_cookie))
 
         workspace_response = _browser_fetch(
             client,
@@ -1071,61 +1075,62 @@ def authorize_account_browser(
         if not isinstance(workspace_data, dict):
             raise RuntimeError("workspace 返回异常")
 
-        orgs = ((workspace_data.get("data") or {}).get("orgs") or []) if isinstance(workspace_data.get("data"), dict) else []
-        if not orgs:
-            raise RuntimeError("workspace 返回里没有 orgs")
-        org = orgs[0] or {}
-        org_id = str(org.get("id") or "").strip()
-        if not org_id:
-            raise RuntimeError("org_id 为空")
-        body: dict[str, str] = {"org_id": org_id}
-        projects = org.get("projects") or []
-        if isinstance(projects, list) and projects:
-            project_id = str((projects[0] or {}).get("id") or "").strip()
-            if project_id:
-                body["project_id"] = project_id
+        if not ((workspace_data.get('data') or {}).get('orgs') or []):
+            next_url = _absolute_auth_url(continuation_without_orgs(workspace_data), '')
+        else:
+            orgs = ((workspace_data.get("data") or {}).get("orgs") or []) if isinstance(workspace_data.get("data"), dict) else []
+            org = orgs[0] or {}
+            org_id = str(org.get("id") or "").strip()
+            if not org_id:
+                raise RuntimeError("org_id 为空")
+            body: dict[str, str] = {"org_id": org_id}
+            projects = org.get("projects") or []
+            if isinstance(projects, list) and projects:
+                project_id = str((projects[0] or {}).get("id") or "").strip()
+                if project_id:
+                    body["project_id"] = project_id
 
-        org_page_url = _absolute_auth_url(
-            str(workspace_data.get("continue_url") or ""),
-            "/sign-in-with-chatgpt/codex/organization",
-        )
-        organization_page = _navigate_browser_page(client, org_page_url, timeout=30)
-        _push_log(
-            logs,
-            {
-                "step": "organization_page",
-                "ts": now_rfc3339(),
-                "url": str(organization_page.get("href") or org_page_url),
-                "title": str(organization_page.get("title") or ""),
-                "path": str(organization_page.get("path") or ""),
-                "body": _snippet(organization_page.get("body_text") or ""),
-            },
-            quiet=quiet,
-            include_secrets=include_secrets,
-            log_fn=log_fn,
-        )
-        organization_response = _browser_fetch(
-            client,
-            url=ORGANIZATION_SELECT_URL,
-            method="POST",
-            headers=_browser_headers(referer=str(organization_page.get("href") or org_page_url)),
-            json_body=body,
-            referrer=str(organization_page.get("href") or org_page_url),
-        )
-        _push_log(logs, _browser_response_entry("organization_select", organization_response, org_id=org_id, project_id=body.get("project_id", "")), quiet=quiet, include_secrets=include_secrets, log_fn=log_fn)
-        _require_browser_ok(organization_response, "组织选择失败")
-        organization_data = organization_response.get("json") or {}
-        if not isinstance(organization_data, dict):
-            raise RuntimeError("组织选择返回异常")
+            org_page_url = _absolute_auth_url(
+                str(workspace_data.get("continue_url") or ""),
+                "/sign-in-with-chatgpt/codex/organization",
+            )
+            organization_page = _navigate_browser_page(client, org_page_url, timeout=30)
+            _push_log(
+                logs,
+                {
+                    "step": "organization_page",
+                    "ts": now_rfc3339(),
+                    "url": str(organization_page.get("href") or org_page_url),
+                    "title": str(organization_page.get("title") or ""),
+                    "path": str(organization_page.get("path") or ""),
+                    "body": _snippet(organization_page.get("body_text") or ""),
+                },
+                quiet=quiet,
+                include_secrets=include_secrets,
+                log_fn=log_fn,
+            )
+            organization_response = _browser_fetch(
+                client,
+                url=ORGANIZATION_SELECT_URL,
+                method="POST",
+                headers=_browser_headers(referer=str(organization_page.get("href") or org_page_url)),
+                json_body=body,
+                referrer=str(organization_page.get("href") or org_page_url),
+            )
+            _push_log(logs, _browser_response_entry("organization_select", organization_response, org_id=org_id, project_id=body.get("project_id", "")), quiet=quiet, include_secrets=include_secrets, log_fn=log_fn)
+            _require_browser_ok(organization_response, "组织选择失败")
+            organization_data = organization_response.get("json") or {}
+            if not isinstance(organization_data, dict):
+                raise RuntimeError("组织选择返回异常")
 
-        next_url = str(
-            organization_data.get("continue_url")
-            or ((organization_data.get("page") or {}).get("payload") or {}).get("url")
-            or ""
-        ).strip()
-        if not next_url:
-            raise RuntimeError("组织选择后没有继续 URL")
-        next_url = _absolute_auth_url(next_url, "/sign-in-with-chatgpt/codex/organization")
+            next_url = str(
+                organization_data.get("continue_url")
+                or ((organization_data.get("page") or {}).get("payload") or {}).get("url")
+                or ""
+            ).strip()
+            if not next_url:
+                raise RuntimeError("组织选择后没有继续 URL")
+            next_url = _absolute_auth_url(next_url, "/sign-in-with-chatgpt/codex/organization")
 
         callback_url = _follow_browser_to_callback(
             client,

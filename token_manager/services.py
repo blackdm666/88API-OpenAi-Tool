@@ -8,20 +8,14 @@ from typing import Any, Callable
 
 import requests
 
-from .converters import to_cpa_payload, to_sub2api_payload
+from .converters import to_sub2api_payload
 from .integrations import (
     bulk_update_sub2api_accounts,
-    delete_cpa_auth_files,
     delete_sub2api_account,
     fetch_sub2api_accounts,
     fetch_sub2api_groups,
-    load_cpa_auth_file_from_docker,
     refresh_sub2api_accounts,
-    resolve_cpa_auth_file_path,
-    save_cpa_auth_file_to_docker,
-    set_cpa_auth_file_disabled,
     upload_state_patch,
-    upload_to_cpa,
     upload_to_sub2api,
     sub2api_upload_payload,
 )
@@ -211,72 +205,10 @@ def sync_subscription(
     return True, "标签同步成功"
 
 
-def refresh_cpa_remote_record(
-    record: dict[str, Any],
-    settings: dict[str, Any],
-    *,
-    proxy_url: str = "",
-    log_fn: Callable[[str], None] | None = None,
-) -> tuple[bool, str]:
-    email = record.get("email") or record.get("name") or "Unknown"
-    file_path = resolve_cpa_auth_file_path(record)
-    if callable(log_fn):
-        log_fn(f"开始刷新远端 CPA {email}")
-    payload = load_cpa_auth_file_from_docker(settings, file_path)
-    refresh_token = str(payload.get("refresh_token") or "").strip()
-    if not refresh_token:
-        return False, "Refresh Token 不存在"
-    token_data = refresh_oauth_token(refresh_token, settings, proxy_url=proxy_url)
-    merged = deepcopy(payload)
-    merged.update(token_data)
-    if not merged.get("email"):
-        merged["email"] = str(record.get("email") or "")
-    save_cpa_auth_file_to_docker(settings, file_path, merged)
-    if callable(log_fn):
-        log_fn(f"远端 CPA 刷新完成 {email}")
-    return True, "远端刷新成功"
 
 
-def set_cpa_remote_record_disabled(
-    record: dict[str, Any],
-    settings: dict[str, Any],
-    *,
-    disabled: bool,
-    proxy_url: str = "",
-    log_fn: Callable[[str], None] | None = None,
-) -> tuple[bool, str]:
-    name = str(record.get("name") or record.get("id") or "").strip()
-    label = record.get("email") or name or "Unknown"
-    if callable(log_fn):
-        log_fn(f"{'禁用' if disabled else '启用'}远端 CPA {label}")
-    ok, message = set_cpa_auth_file_disabled(settings, name, disabled, proxy_url=proxy_url)
-    if callable(log_fn):
-        log_fn(f"{'禁用' if disabled else '启用'}远端 CPA 结束 {label}: {message}")
-    return ok, message
 
 
-def delete_cpa_remote_records(
-    records: list[dict[str, Any]],
-    settings: dict[str, Any],
-    *,
-    proxy_url: str = "",
-    log_fn: Callable[[str], None] | None = None,
-) -> tuple[bool, str]:
-    names = sorted(
-        {
-            str(record.get("name") or record.get("id") or "").strip()
-            for record in records
-            if str(record.get("name") or record.get("id") or "").strip()
-        }
-    )
-    if not names:
-        return False, "没有可删除的 CPA 文件"
-    if callable(log_fn):
-        log_fn(f"开始删除远端 CPA {len(names)} 个文件")
-    ok, message = delete_cpa_auth_files(settings, names, proxy_url=proxy_url)
-    if callable(log_fn):
-        log_fn(f"删除远端 CPA 结束: {message}")
-    return ok, message
 
 
 def is_sub2api_invalidated(record: dict[str, Any]) -> bool:
@@ -385,12 +317,9 @@ def delete_sub2api_remote_records(
 
 
 def _upload_target(target: str):
-    normalized = str(target or "").strip().lower()
-    if normalized == "cpa":
-        return upload_to_cpa
-    if normalized == "sub2api":
-        return upload_to_sub2api
-    raise ValueError(f"未知上传目标: {target}")
+    if str(target).lower() != 'sub2api':
+        raise ValueError('当前版本只支持 Sub2API 上传')
+    return upload_to_sub2api
 
 
 def upload_record(
@@ -406,9 +335,7 @@ def upload_record(
     if callable(log_fn):
         log_fn(f"开始上传 {email} -> {target}")
     normalized_target = str(target or "").strip().lower()
-    if normalized_target == "cpa":
-        export_path = store.export_payload(email, normalized_target, to_cpa_payload(record))
-    elif normalized_target == "sub2api":
+    if normalized_target == "sub2api":
         export_path = store.export_payload(email, normalized_target, sub2api_upload_payload(record, settings))
     else:
         export_path = None
@@ -431,11 +358,10 @@ def export_record_payloads(
     log_fn: Callable[[str], None] | None = None,
 ) -> dict[str, str]:
     email = str(record.get("email") or "").strip()
-    cpa_path = store.export_payload(email, "CPA", to_cpa_payload(record))
     sub2api_path = store.export_payload(email, "Sub2API", sub2api_upload_payload(record, settings))
     if callable(log_fn):
         log_fn(f"已整理导出 {email}")
-    return {"CPA": str(cpa_path), "Sub2API": str(sub2api_path)}
+    return {"Sub2API": str(sub2api_path)}
 
 
 def _sub2api_export_expires_at(record: dict[str, Any]) -> str:
@@ -492,13 +418,11 @@ def export_organized_payloads(
     *,
     log_fn: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
-    cpa_paths: list[str] = []
     group_ids = ((settings.get("integrations") or {}).get("sub2api") or {}).get("group_ids")
     sub2api_accounts: list[dict[str, Any]] = []
     removed_sub2api_files = store.cleanup_target_json_files("Sub2API", keep_prefixes=("sub2api_accounts_",))
     for record in records:
         email = str(record.get("email") or "").strip()
-        cpa_paths.append(str(store.export_payload(email, "CPA", to_cpa_payload(record))))
         sub2api_accounts.append(_sub2api_export_account(record, group_ids=group_ids, settings=settings))
         if callable(log_fn):
             log_fn(f"已整理导出 {email}")
@@ -515,7 +439,6 @@ def export_organized_payloads(
         if removed_sub2api_files:
             log_fn(f"已清理旧的 Sub2API 分散文件 {removed_sub2api_files} 个")
     return {
-        "cpa_count": len(cpa_paths),
         "sub2api_count": len(sub2api_accounts),
         "sub2api_path": str(sub2api_path),
         "removed_sub2api_files": removed_sub2api_files,

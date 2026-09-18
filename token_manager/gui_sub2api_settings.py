@@ -10,6 +10,7 @@ from .integrations import (
     fetch_sub2api_accounts,
 )
 from .sub2api_policy import normalize_server_url, upload_options, match_remote
+from .gui_widgets import CheckList
 
 
 FINGERPRINTS = {
@@ -18,6 +19,7 @@ FINGERPRINTS = {
     "会话级收敛": "session",
     "完整收敛": "full",
 }
+WS_MODES = {'上下文池（默认）': 'ctx_pool', '关闭': 'off', '透传': 'passthrough', 'HTTP桥接': 'http_bridge'}
 
 
 class GUISub2APISettingsMixin:
@@ -31,8 +33,8 @@ class GUISub2APISettingsMixin:
         cfg = deepcopy(settings["integrations"]["sub2api"])
         dialog = tk.Toplevel(self.root)
         dialog.title("Sub2API · 连接与上传设置")
-        dialog.geometry("700x540")
-        dialog.minsize(620, 500)
+        dialog.geometry("740x600")
+        dialog.minsize(660, 570)
         dialog.transient(self.root)
         dialog.grab_set()
         frame = ttk.Frame(dialog, padding=20, style="Card.TFrame")
@@ -108,9 +110,11 @@ class GUISub2APISettingsMixin:
                 "关闭",
             )
         )
+        field(12, 'ws_mode', 'WS mode', 'ctx_pool', options=list(WS_MODES))
+        values['ws_mode'].set(next((k for k,v in WS_MODES.items() if v == cfg.get('ws_mode', 'ctx_pool')), '上下文池（默认）'))
         pause = tk.BooleanVar(value=bool(cfg.get("auto_pause_on_expired", True)))
         ttk.Checkbutton(parameters, text="账号到期时自动暂停", variable=pause).grid(
-            row=6, column=0, columnspan=2, sticky="w", pady=6
+            row=7, column=0, columnspan=2, sticky="w", pady=6
         )
         catalog = tk.StringVar(value="读取远端选项后可查看分组和代理的名称、ID。")
         ttk.Label(
@@ -127,6 +131,7 @@ class GUISub2APISettingsMixin:
                 params["codex_fingerprint_mode"]
             ]
             params["auto_pause_on_expired"] = pause.get()
+            params['ws_mode'] = WS_MODES[params['ws_mode']]
             if validate:
                 upload_options(params)
             # A changed login or server must not retain another session.
@@ -192,6 +197,7 @@ class GUISub2APISettingsMixin:
             self.status_var.set("上传参数已保存；手动上传时应用，自动恢复仅更新凭据")
             dialog.destroy()
 
+        ttk.Button(parameters, text='多选分组 / 选择代理…', command=load_choices).grid(row=8, column=0, columnspan=2, sticky='ew', pady=6)
         ttk.Button(actions, text="读取分组 / 代理", command=load_choices).pack(
             side="left"
         )
@@ -206,23 +212,18 @@ class GUISub2APISettingsMixin:
         picker.geometry("600x420")
         picker.transient(owner)
         picker.grab_set()
+        picker.protocol("WM_DELETE_WINDOW", lambda: (picker.destroy(), owner.grab_set()))
         box = ttk.Frame(picker, padding=16)
         box.pack(fill="both", expand=True)
-        ttk.Label(box, text="分组（可按 Ctrl / Shift 多选）").pack(anchor="w")
-        group_list = tk.Listbox(
-            box, selectmode="extended", exportselection=False, height=9
-        )
-        group_list.pack(fill="both", expand=True, pady=8)
+        ttk.Label(box, text="勾选上传分组（可同时选择多个）").pack(anchor="w")
         available = [
             g
             for g in data["groups"]
             if g.get("platform") == "openai" and g.get("status") == "active"
         ]
         selected = values["group_ids"].get().replace("，", ",").split(",")
-        for i, group in enumerate(available):
-            group_list.insert("end", f"#{group['id']}  {group['name']}")
-            if str(group["id"]) in [s.strip() for s in selected]:
-                group_list.selection_set(i)
+        group_list = CheckList(box, [(g['id'], f"#{g['id']}  {g['name']}") for g in available], [s.strip() for s in selected])
+        group_list.pack(fill='both', expand=True, pady=8)
         proxies = [p for p in data["proxies"] if p.get("status") in ("active", "")]
         labels = ["直连（不使用代理）"] + [f"#{p['id']}  {p['name']}" for p in proxies]
         proxy_box = ttk.Combobox(box, values=labels, state="readonly")
@@ -238,13 +239,13 @@ class GUISub2APISettingsMixin:
         proxy_box.current(current)
 
         def apply():
-            indices = group_list.curselection()
-            if not indices:
+            selected_ids = group_list.selected()
+            if not selected_ids:
                 messagebox.showerror(
                     "请选择分组", "至少选择一个上传分组", parent=picker
                 )
                 return
-            values["group_ids"].set(",".join(str(available[i]["id"]) for i in indices))
+            values["group_ids"].set(",".join(str(value) for value in selected_ids))
             index = proxy_box.current()
             values["proxy_id"].set(str(proxies[index - 1]["id"]) if index > 0 else "")
             picker.destroy()

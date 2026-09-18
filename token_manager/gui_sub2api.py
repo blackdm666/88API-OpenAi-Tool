@@ -3,7 +3,8 @@ from __future__ import annotations
 from typing import Any
 
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, ttk
+from .gui_widgets import CheckList
 
 from .services import (
     delete_sub2api_remote_records,
@@ -49,13 +50,14 @@ class GUISub2APIMixin:
     def clear_sub2api_filters(self) -> None:
         self.sub2api_search_var.set("")
         self.sub2api_group_filter_var.set("全部分组")
+        self.sub2api_group_filters.clear()
         self.sub2api_status_filter_var.set("全部状态")
         self.sub2api_type_filter_var.set("全部类型")
         self.populate_sub2api_tree()
 
     def filter_sub2api_records(self, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
         search = self.sub2api_search_var.get().strip().lower()
-        group_filter = self.sub2api_group_filter_var.get().strip().lower()
+        selected_groups = {g.lower() for g in self.sub2api_group_filters}
         status_filter = self.sub2api_status_filter_var.get().strip().lower()
         type_filter = self.sub2api_type_filter_var.get().strip().lower()
         filtered: list[dict[str, Any]] = []
@@ -68,9 +70,9 @@ class GUISub2APIMixin:
             status = str(record.get("status") or "").strip().lower()
             if search and search not in email and search not in name and search not in groups and search not in error_message:
                 continue
-            if group_filter and group_filter != "全部分组".lower():
+            if selected_groups:
                 group_names = [str(item).strip().lower() for item in (record.get("group_names") or [])]
-                if group_filter not in group_names:
+                if not selected_groups.intersection(group_names):
                     continue
             if type_filter and type_filter != "全部类型".lower() and type_filter != record_type:
                 continue
@@ -83,14 +85,28 @@ class GUISub2APIMixin:
             filtered.append(record)
         return filtered
 
-    def _update_sub2api_group_filter_values(self) -> None:
-        values = ["全部分组"]
-        values.extend(sorted({str(item.get("name") or "").strip() for item in self.sub2api_groups if str(item.get("name") or "").strip()}))
-        if hasattr(self, "sub2api_group_combo"):
-            self.sub2api_group_combo.configure(values=values)
-        current = self.sub2api_group_filter_var.get().strip()
-        if current and current not in values:
-            self.sub2api_group_filter_var.set("全部分组")
+    def _update_sub2api_group_filter_values(self):
+        names = sorted(self.sub2api_group_filters)
+        self.sub2api_group_filter_var.set('、'.join(names) if names else '全部分组（可多选）')
+
+    def choose_sub2api_group_filters(self):
+        dialog = tk.Toplevel(self.root)
+        dialog.title('筛选分组 · 多选')
+        dialog.geometry('470x380')
+        dialog.transient(self.root)
+        dialog.grab_set()
+        names = sorted({name for r in self.sub2api_records for name in r.get('group_names', [])})
+        choices = CheckList(dialog, [(name, name) for name in names], self.sub2api_group_filters)
+        choices.pack(fill='both', expand=True, padx=16, pady=16)
+        buttons = ttk.Frame(dialog, padding=12)
+        buttons.pack(fill='x')
+        def apply():
+            self.sub2api_group_filters = set(choices.selected())
+            dialog.destroy()
+            self.populate_sub2api_tree()
+        ttk.Button(buttons, text='全选', command=choices.select_all).pack(side='left')
+        ttk.Button(buttons, text='清空', command=lambda: choices.select_all(False)).pack(side='left', padx=6)
+        ttk.Button(buttons, text='应用筛选', command=apply, style='Primary.TButton').pack(side='right')
 
     def populate_sub2api_tree(self) -> None:
         for item in self.sub2api_tree.get_children():

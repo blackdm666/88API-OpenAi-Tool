@@ -1,18 +1,12 @@
 from __future__ import annotations
 
-import json
-import shlex
-import subprocess
-import sys
-import tempfile
 import threading
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import Any
 
 import requests
 
-from .converters import to_cpa_payload, to_sub2api_payload
+from .converters import to_sub2api_payload
 from .sub2api_policy import normalize_server_url, upload_options, match_remote, redact_error
 from .utils import build_requests_proxies, now_rfc3339, now_ts, safe_int
 
@@ -27,40 +21,14 @@ def _response_error(response: requests.Response) -> str:
     return response.text[:300].strip() or f"HTTP {response.status_code}"
 
 
-def _subprocess_silent_kwargs() -> dict[str, Any]:
-    if sys.platform != "win32":
-        return {}
-    startupinfo = subprocess.STARTUPINFO()
-    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-    return {
-        "startupinfo": startupinfo,
-        "creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0),
-    }
 
 
-def _cpa_api_url(settings: dict[str, Any]) -> str:
-    cpa = ((settings.get("integrations") or {}).get("cpa") or {})
-    api_url = str(cpa.get("api_url") or "").strip()
-    if not api_url:
-        raise RuntimeError("CPA API URL 未配置")
-    return api_url.rstrip("/")
 
 
-def _cpa_api_key(settings: dict[str, Any]) -> str:
-    cpa = ((settings.get("integrations") or {}).get("cpa") or {})
-    return str(cpa.get("api_key") or "").strip()
 
 
-def _cpa_container_name(settings: dict[str, Any]) -> str:
-    cpa = ((settings.get("integrations") or {}).get("cpa") or {})
-    return str(cpa.get("container_name") or "cli-proxy-api").strip() or "cli-proxy-api"
 
 
-def _cpa_management_headers(settings: dict[str, Any]) -> dict[str, str]:
-    return {
-        "Authorization": f"Bearer {_cpa_api_key(settings)}",
-        "Accept": "application/json, text/plain, */*",
-    }
 
 
 def _sub2api_settings(settings: dict[str, Any]) -> dict[str, Any]:
@@ -499,256 +467,22 @@ def delete_sub2api_account(
     return False, _response_error(response)
 
 
-def resolve_cpa_auth_file_path(record: dict[str, Any]) -> str:
-    file_path = str(record.get("path") or "").strip()
-    if file_path:
-        return file_path
-    file_name = str(record.get("name") or record.get("id") or "").strip()
-    if not file_name:
-        raise RuntimeError("CPA 记录缺少 path/name")
-    return f"/root/.cli-proxy-api/{file_name}"
 
 
-def _docker_exec(container_name: str, command: str, *, timeout: int = 30) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["docker", "exec", container_name, "sh", "-lc", command],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=timeout,
-        **_subprocess_silent_kwargs(),
-    )
 
 
-def load_cpa_auth_file_from_docker(settings: dict[str, Any], file_path: str) -> dict[str, Any]:
-    container_name = _cpa_container_name(settings)
-    command = f"cat {shlex.quote(str(file_path).strip())}"
-    proc = _docker_exec(container_name, command, timeout=30)
-    if proc.returncode != 0:
-        raise RuntimeError(proc.stderr.strip() or proc.stdout.strip() or "docker exec 读取失败")
-    try:
-        payload = json.loads(proc.stdout)
-    except Exception as exc:
-        raise RuntimeError(f"CPA 文件 JSON 解析失败: {exc}") from exc
-    if not isinstance(payload, dict):
-        raise RuntimeError("CPA 文件内容不是对象")
-    return payload
 
 
-def save_cpa_auth_file_to_docker(settings: dict[str, Any], file_path: str, payload: dict[str, Any]) -> None:
-    container_name = _cpa_container_name(settings)
-    target_path = str(file_path).strip()
-    if not target_path:
-        raise RuntimeError("CPA 目标路径为空")
-    parent_dir = str(Path(target_path).parent).replace("\\", "/")
-    mkdir_proc = _docker_exec(container_name, f"mkdir -p {shlex.quote(parent_dir)}", timeout=15)
-    if mkdir_proc.returncode != 0:
-        raise RuntimeError(mkdir_proc.stderr.strip() or mkdir_proc.stdout.strip() or "创建 CPA 目录失败")
-
-    temp_path = ""
-    try:
-        with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False, suffix=".json") as handle:
-            json.dump(payload, handle, ensure_ascii=False, indent=2)
-            temp_path = handle.name
-        proc = subprocess.run(
-            ["docker", "cp", temp_path, f"{container_name}:{target_path}"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=30,
-            **_subprocess_silent_kwargs(),
-        )
-        if proc.returncode != 0:
-            raise RuntimeError(proc.stderr.strip() or proc.stdout.strip() or "docker cp 写入失败")
-    finally:
-        if temp_path:
-            try:
-                Path(temp_path).unlink()
-            except Exception:
-                pass
 
 
-def set_cpa_auth_file_disabled(
-    settings: dict[str, Any],
-    name: str,
-    disabled: bool,
-    *,
-    proxy_url: str = "",
-) -> tuple[bool, str]:
-    target_name = str(name or "").strip()
-    if not target_name:
-        return False, "CPA 文件名为空"
-    response = requests.patch(
-        f"{_cpa_api_url(settings)}/v0/management/auth-files/status",
-        headers={
-            **_cpa_management_headers(settings),
-            "Content-Type": "application/json",
-        },
-        json={"name": target_name, "disabled": bool(disabled)},
-        timeout=30,
-        verify=False,
-        proxies=build_requests_proxies(proxy_url),
-    )
-    if response.status_code == 200:
-        return True, "已更新禁用状态"
-    return False, _response_error(response)
 
 
-def delete_cpa_auth_files(
-    settings: dict[str, Any],
-    names: list[str],
-    *,
-    delete_all: bool = False,
-    proxy_url: str = "",
-) -> tuple[bool, str]:
-    response = requests.delete(
-        f"{_cpa_api_url(settings)}/v0/management/auth-files",
-        headers={
-            **_cpa_management_headers(settings),
-            "Content-Type": "application/json",
-        },
-        params={"all": "true"} if delete_all else None,
-        json=None if delete_all else {"names": [name for name in names if str(name).strip()]},
-        timeout=30,
-        verify=False,
-        proxies=build_requests_proxies(proxy_url),
-    )
-    if response.status_code in (200, 201):
-        return True, "删除成功"
-    return False, _response_error(response)
 
 
-def fetch_cpa_accounts(settings: dict[str, Any], proxy_url: str = "") -> list[dict[str, Any]]:
-    response = requests.get(
-        f"{_cpa_api_url(settings)}/v0/management/auth-files",
-        headers=_cpa_management_headers(settings),
-        timeout=30,
-        verify=False,
-        proxies=build_requests_proxies(proxy_url),
-    )
-    if response.status_code != 200:
-        raise RuntimeError(_response_error(response))
-
-    data = response.json()
-    items = data.get("files", []) if isinstance(data, dict) else []
-    records: list[dict[str, Any]] = []
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        id_token = item.get("id_token") or {}
-        if not isinstance(id_token, dict):
-            id_token = {}
-        plan = str(id_token.get("plan_type") or "").strip().lower() or "unknown"
-        records.append(
-            {
-                "email": str(item.get("email") or "").strip(),
-                "name": str(item.get("name") or "").strip(),
-                "path": str(item.get("path") or "").strip(),
-                "provider": str(item.get("provider") or item.get("type") or "").strip(),
-                "status": str(item.get("status") or "").strip(),
-                "status_message": str(item.get("status_message") or "").strip(),
-                "last_refresh": str(item.get("last_refresh") or "").strip(),
-                "next_retry_after": str(item.get("next_retry_after") or "").strip(),
-                "disabled": bool(item.get("disabled")),
-                "unavailable": bool(item.get("unavailable")),
-                "plan": plan,
-                "subscription_active_until": str(id_token.get("chatgpt_subscription_active_until") or "").strip(),
-            }
-        )
-    records.sort(key=lambda item: (item.get("email", ""), item.get("status", "")))
-    return records
 
 
-def import_cpa_accounts_from_docker(settings: dict[str, Any], store, proxy_url: str = "") -> dict[str, Any]:
-    container_name = _cpa_container_name(settings)
-    summaries = fetch_cpa_accounts(settings, proxy_url=proxy_url)
-    codex_rows = [item for item in summaries if str(item.get("provider") or "").strip().lower() == "codex"]
-
-    def _status_rank(row: dict[str, Any]) -> tuple[int, str, str]:
-        status = str(row.get("status") or "").strip().lower()
-        rank = 3 if status == "active" else 2 if status == "refreshing" else 1 if status == "pending" else 0
-        return (rank, str(row.get("last_refresh") or "").strip(), str(row.get("name") or "").strip())
-
-    grouped: dict[str, list[dict[str, Any]]] = {}
-    for row in codex_rows:
-        email = str(row.get("email") or "").strip().lower()
-        if not email:
-            continue
-        grouped.setdefault(email, []).append(row)
-
-    selected_rows: list[dict[str, Any]] = []
-    for _, items in grouped.items():
-        selected_rows.append(sorted(items, key=_status_rank, reverse=True)[0])
-
-    imported = 0
-    failures: list[str] = []
-    for row in selected_rows:
-        file_name = str(row.get("name") or "").strip()
-        file_path = str(row.get("path") or "").strip() or f"/root/.cli-proxy-api/{file_name}"
-        if not file_name:
-            failures.append("发现一条缺少文件名的 CPA 记录")
-            continue
-        command = f"cat {shlex.quote(file_path)}"
-        proc = subprocess.run(
-            ["docker", "exec", container_name, "sh", "-lc", command],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=30,
-            **_subprocess_silent_kwargs(),
-        )
-        if proc.returncode != 0:
-            failures.append(f"{file_name}: {proc.stderr.strip() or proc.stdout.strip() or 'docker exec 失败'}")
-            continue
-        try:
-            payload = json.loads(proc.stdout)
-        except Exception as exc:
-            failures.append(f"{file_name}: JSON 解析失败 {exc}")
-            continue
-        if not isinstance(payload, dict):
-            failures.append(f"{file_name}: 文件内容不是对象")
-            continue
-        if not any(payload.get(key) for key in ("access_token", "refresh_token", "id_token")):
-            failures.append(f"{file_name}: 缺少 token 字段")
-            continue
-        store.save_record(payload)
-        imported += 1
-
-    return {
-        "total": len(selected_rows),
-        "imported": imported,
-        "fail_count": len(failures),
-        "failures": failures,
-    }
 
 
-def upload_to_cpa(record: dict[str, Any], settings: dict[str, Any], proxy_url: str = "") -> tuple[bool, str]:
-    try:
-        api_url = _cpa_api_url(settings)
-        api_key = _cpa_api_key(settings)
-    except RuntimeError as exc:
-        return False, str(exc)
-    payload = to_cpa_payload(record)
-    response = requests.post(
-        f"{api_url}/v0/management/auth-files",
-        headers={"Authorization": f"Bearer {api_key}"},
-        files={
-            "file": (
-                f"{payload['email']}.json",
-                json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"),
-                "application/json",
-            )
-        },
-        timeout=30,
-        verify=False,
-        proxies=build_requests_proxies(proxy_url),
-    )
-    if response.status_code in (200, 201):
-        return True, "上传成功"
-    return False, _response_error(response)
 
 
 def upload_to_sub2api(record: dict[str, Any], settings: dict[str, Any], proxy_url: str = "") -> tuple[bool, str]:

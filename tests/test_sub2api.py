@@ -96,7 +96,7 @@ class Sub2APITest(Fixture, unittest.TestCase):
         )
         self.assertEqual(
             body["extra"],
-            {"email": self.local["email"], "codex_fingerprint_mode": "session"},
+            {"email": self.local["email"], "codex_fingerprint_mode": "session", "openai_oauth_responses_websockets_v2_mode": "ctx_pool", "openai_oauth_responses_websockets_v2_enabled": True},
         )
         for key, value in [
             ("group_ids", "bad"),

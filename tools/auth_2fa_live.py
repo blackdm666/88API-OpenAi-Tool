@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tools.auth_support import fresh_totp, workspace_from_session, failure_advice
+
 import argparse
 import base64
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -34,7 +36,6 @@ MFA_VERIFY_URL = f"{AUTH_BASE_URL}/api/accounts/mfa/verify"
 WORKSPACE_SELECT_URL = f"{AUTH_BASE_URL}/api/accounts/workspace/select"
 ORGANIZATION_SELECT_URL = f"{AUTH_BASE_URL}/api/accounts/organization/select"
 SENTINEL_URL = "https://sentinel.openai.com/backend-api/sentinel/req"
-TWOFA_LIVE_URL = "https://2fa.live/tok/"
 EGRESS_GEO_URL = "https://ipwho.is/"
 LINE_SPLIT_RE = re.compile(r"-{2,}")
 LOGIN_VERIFIER_RE = re.compile(r"https://auth\.openai\.com/api/oauth/oauth2/auth[^\"'\s>]+", re.I)
@@ -63,7 +64,7 @@ def _mask_value(value: str, *, prefix: int = 2, suffix: int = 2) -> str:
 def _sanitize_account_payload(account: AuthAccount, *, include_secrets: bool) -> dict[str, Any]:
     payload = {
         "email": account.email,
-        "totp_provider": "2fa.live",
+        "totp_provider": "local-rfc6238",
         "input_format": "email----password----totp_secret",
         "password_length": len(account.password),
         "totp_secret_length": len(account.totp_secret),
@@ -267,7 +268,7 @@ def _emit_log(entry: dict[str, Any], *, quiet: bool, include_secrets: bool, log_
     if error:
         step = str(entry.get("step") or "")
         label = _STEP_ORDER.get(step, step)
-        message = f"[{label}] 小翻车了 {error}"
+        message = f"[{label}] 失败：{error}。{failure_advice(error)}"
         if callable(log_fn):
             log_fn(message)
         if not quiet:
@@ -554,18 +555,8 @@ def _detect_egress_drift(egress_start: dict[str, Any], egress_end: dict[str, Any
 
 
 def _fetch_live_totp_code(secret: str, proxy_url: str) -> str:
-    encoded = urllib.parse.quote(str(secret or "").strip(), safe="")
-    response = curl_requests.get(
-        f"{TWOFA_LIVE_URL}{encoded}",
-        proxies=_build_requests_proxies(proxy_url),
-        timeout=20,
-        impersonate="safari",
-    )
-    data = _safe_json(response)
-    code = str(data.get("token") or data.get("otp") or "").strip()
-    if response.status_code == 200 and re.fullmatch(r"\d{6}", code):
-        return code
-    raise RuntimeError(f"2fa.live 返回异常: HTTP {response.status_code} {_snippet(data or response.text)}")
+    # RFC6238 locally: the seed is never sent to a third-party OTP service.
+    return fresh_totp(secret)
 
 
 def _fetch_sentinel_token(session: Any, did: str) -> str:
@@ -890,9 +881,7 @@ def authorize_account(
         _push_log(logs, _response_entry("consent_page", consent_page), quiet=quiet, include_secrets=include_secrets, log_fn=log_fn)
 
         auth_cookie = str(session.cookies.get("oai-client-auth-session") or "").strip()
-        if not auth_cookie:
-            raise RuntimeError("没有拿到 oai-client-auth-session")
-        workspace_id = _select_workspace(auth_cookie)
+        workspace_id = workspace_from_session(verify_payload, _parse_auth_cookie(auth_cookie))
 
         workspace_response = session.post(
             WORKSPACE_SELECT_URL,
@@ -1296,7 +1285,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--redirect-uri", default="", help="覆盖 redirect_uri")
     parser.add_argument("--scope", default="", help="覆盖 scope")
     parser.add_argument("--save-token", action="store_true", help="成功后也写入 tokens 目录")
-    parser.add_argument("--dry-run", action="store_true", help="只测试解析、OAuth 起点和 2fa.live")
+    parser.add_argument("--dry-run", action="store_true", help="只测试解析、OAuth 起点和本地TOTP生成")
     parser.add_argument("--quiet", action="store_true", help="关闭实时日志输出")
     parser.add_argument("--unsafe-include-secrets", action="store_true", help="在日志和报告里保留敏感明文")
     return parser

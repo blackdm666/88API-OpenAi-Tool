@@ -7,7 +7,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 
 from .integrations import sub2api_upload_payload
-from .converters import from_cpa_payload, from_sub2api_payload, to_cpa_payload
+from .converters import from_local_payload, from_sub2api_payload
 from .services import export_organized_payloads, refresh_record, run_batch, sync_subscription, upload_record
 
 
@@ -110,7 +110,7 @@ class GUIRecordsMixin:
                 messagebox.showerror("错误", result["error"])
                 return
             self.log(
-                f"已整理导出 CPA {result.get('cpa_count', 0)} 个账号文件，"
+                "已整理导出 "
                 f"Sub2API 聚合 {result.get('sub2api_count', 0)} 个账号"
             )
             if result.get("removed_sub2api_files", 0):
@@ -118,12 +118,11 @@ class GUIRecordsMixin:
             self.reload_tokens(save_first=False)
             messagebox.showinfo(
                 "完成",
-                f"CPA 已导出 {result.get('cpa_count', 0)} 个账号文件\n"
                 f"Sub2API 已生成聚合文件\n{result.get('sub2api_path', '')}\n"
                 f"清理旧的分散文件 {result.get('removed_sub2api_files', 0)} 个",
             )
 
-        self.run_background("正在整理 CPA 和 Sub2API 输出目录", worker, done)
+        self.run_background("正在整理 Sub2API 输出目录", worker, done)
 
     def cleanup_tokens_dir(self) -> None:
         self.save_settings(reload_tokens=False, notify=False)
@@ -151,7 +150,7 @@ class GUIRecordsMixin:
     def upload_summary(self, record: dict[str, object]) -> str:
         uploads = record.get("uploads") or {}
         parts: list[str] = []
-        for key in ("cpa", "sub2api"):
+        for key in ("sub2api",):
             state = uploads.get(key) or {}
             if not state:
                 continue
@@ -189,21 +188,13 @@ class GUIRecordsMixin:
 
         uploads = record.get("uploads") or {}
         upload_lines = []
-        for key in ("cpa", "sub2api"):
+        for key in ("sub2api",):
             state = uploads.get(key) or {}
             if state:
                 upload_lines.append(
                     f"{key}: {'成功' if state.get('ok') else '失败'} {state.get('updated_at', '')} {state.get('message', '')}".strip()
                 )
         subscription = record.get("subscription") or {}
-        cpa_remote = self.cpa_index.get(str(record.get("email") or "").strip().lower(), {})
-        cpa_remote_text = "CPA 未加载或未找到对应账号"
-        if cpa_remote:
-            cpa_remote_text = (
-                f"状态 {cpa_remote.get('status', '')}  "
-                f"标签 {self.plan_label({'_plan': cpa_remote.get('plan', 'unknown')})}  "
-                f"远端刷新 {cpa_remote.get('last_refresh', '') or '无'}"
-            )
         sub2api_remote = self.sub2api_index.get(str(record.get("email") or "").strip().lower(), {})
         sub2api_remote_text = "Sub2API 未加载或未找到对应账号"
         if sub2api_remote:
@@ -230,9 +221,6 @@ class GUIRecordsMixin:
 
 上传状态:
 {chr(10).join(upload_lines) if upload_lines else '暂无'}
-
-CPA 远端:
-{cpa_remote_text}
 
 Sub2API 远端:
 {sub2api_remote_text}
@@ -383,12 +371,8 @@ Sub2API 远端:
             messagebox.showerror("错误", "请先选择账号")
             return
         self.save_settings(reload_tokens=False, notify=False)
-        if format_name.upper() == "CPA":
-            payload = to_cpa_payload(record)
-            export_target = "cpa"
-        else:
-            payload = sub2api_upload_payload(record, self.current_settings())
-            export_target = "sub2api"
+        payload = sub2api_upload_payload(record, self.current_settings())
+        export_target = 'sub2api'
         self.preview_text_value = json.dumps(payload, ensure_ascii=False, indent=2)
         self.preview_text.delete("1.0", tk.END)
         self.preview_text.insert("1.0", self.preview_text_value)
@@ -408,10 +392,7 @@ Sub2API 远端:
     def import_payloads(self, payloads: list[dict[str, object]], source: str) -> int:
         count = 0
         for payload in payloads:
-            if source == "CPA":
-                record = from_cpa_payload(payload)
-            else:
-                record = from_sub2api_payload(payload)
+            record = from_sub2api_payload(payload) if "credentials" in payload else from_local_payload(payload)
             if not record.get("access_token") and not record.get("refresh_token"):
                 continue
             self.store.save_record(record)
@@ -446,7 +427,7 @@ Sub2API 远端:
         except json.JSONDecodeError as exc:
             messagebox.showerror("错误", f"JSON 解析失败: {exc}")
             return
-        payloads = data if isinstance(data, list) else [data]
+        payloads = data if isinstance(data, list) else data.get("accounts", [data]) if isinstance(data, dict) else []
         payloads = [item for item in payloads if isinstance(item, dict)]
         count = self.import_payloads(payloads, source)
         self.log(f"已从 {source} 导入 {count} 条账号")

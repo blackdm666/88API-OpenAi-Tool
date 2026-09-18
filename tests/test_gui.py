@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from token_manager.config import default_config
 from token_manager.gui import TokenManagerGUI
+from token_manager.gui_widgets import CheckList
 
 
 class LayoutTest(unittest.TestCase):
@@ -45,6 +46,11 @@ class LayoutTest(unittest.TestCase):
                     app.populate_sub2api_tree()
                     root.update_idletasks()
                     self.assertEqual(len(app.sub2api_tree.get_children()), 16)
+                    self.assertNotIn('CPA', [app.right_notebook.tab(tab, 'text') for tab in app.right_notebook.tabs()])
+                    app.sub2api_group_filters = {'GPT PLUS', 'GPT PRO'}
+                    mixed = [{'email':'a', 'group_names':['GPT PLUS']}, {'email':'b','group_names':['GPT PRO']}, {'email':'c','group_names':['Other']}]
+                    self.assertEqual([r['email'] for r in app.filter_sub2api_records(mixed)], ['a','b'])
+                    app.sub2api_group_filters.clear()
                     self.assertGreaterEqual(app.sub2api_tree.winfo_height(), 200)
                     self.assertTrue(
                         app.sub2api_tree.bbox(app.sub2api_tree.get_children()[0])
@@ -70,6 +76,20 @@ class LayoutTest(unittest.TestCase):
                     ]
                     self.assertEqual(len(dialogs), 1)
                     dialogs[0].destroy()
+                    checklist = CheckList(root, [(2, 'PLUS'), (24, 'PRO')], [2])
+                    checklist.variables[24].set(True)
+                    self.assertEqual(checklist.selected(), [2,24])
+                    checklist.variables[2].set(False)
+                    self.assertEqual(checklist.selected(), [24])
+                    checklist.destroy()
+                    style = __import__('tkinter.ttk', fromlist=['Style']).Style(root)
+                    self.assertEqual(style.lookup('TCombobox', 'selectforeground', ('readonly',)), app.palette['text'])
+                    sample = __import__('tkinter.ttk', fromlist=['Combobox']).Combobox(root, values=['上下文池','关闭'], state='readonly')
+                    popup = root.tk.call('ttk::combobox::PopdownWindow', str(sample))
+                    listbox = str(popup) + '.f.l'
+                    self.assertEqual(root.tk.call(listbox,'cget','-foreground'),app.palette['text'])
+                    self.assertEqual(root.tk.call(listbox,'cget','-background'),app.palette['card'])
+                    sample.destroy()
                     app.toggle_account_panel()
                     root.update_idletasks()
                     self.assertNotIn(

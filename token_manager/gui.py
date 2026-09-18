@@ -12,7 +12,6 @@ from .config import load_app_config
 from .constants import APP_NAME, APP_VERSION, DEFAULT_AUTH_TIMEOUT_SECONDS
 from .gui_auth import GUIAuthMixin
 from .gui_common import GUICommonMixin
-from .gui_cpa import GUICPAMixin
 from .gui_layout import GUILayoutMixin
 from .gui_records import GUIRecordsMixin
 from .gui_sub2api import GUISub2APIMixin
@@ -72,7 +71,6 @@ def _apply_window_geometry(root: tk.Tk) -> None:
 class TokenManagerGUI(
     GUILayoutMixin,
     GUISub2APISettingsMixin,
-    GUICPAMixin,
     GUISub2APIMixin,
     GUIRecordsMixin,
     GUIAuthMixin,
@@ -88,12 +86,6 @@ class TokenManagerGUI(
         self.log_bus = LogBus()
         self._state_lock = threading.Lock()
         self.records: list[dict[str, Any]] = []
-        self.cpa_records: list[dict[str, Any]] = []
-        self.filtered_cpa_records: list[dict[str, Any]] = []
-        self.invalidated_cpa_records: list[dict[str, Any]] = []
-        self.cpa_index: dict[str, dict[str, Any]] = {}
-        self.cpa_row_index: dict[str, dict[str, Any]] = {}
-        self.cpa_invalidated_row_index: dict[str, dict[str, Any]] = {}
         self.sub2api_records: list[dict[str, Any]] = []
         self.filtered_sub2api_records: list[dict[str, Any]] = []
         self.invalidated_sub2api_records: list[dict[str, Any]] = []
@@ -101,6 +93,7 @@ class TokenManagerGUI(
         self.sub2api_row_index: dict[str, dict[str, Any]] = {}
         self.sub2api_invalidated_row_index: dict[str, dict[str, Any]] = {}
         self.sub2api_groups: list[dict[str, Any]] = []
+        self.sub2api_group_filters = set()
         self.manual_oauth_start = None
         self.running_job = False
         self._running_job_lock = threading.Lock()
@@ -128,9 +121,6 @@ class TokenManagerGUI(
         self.plan_filter_var = tk.StringVar(value="全部标签")
         self.status_filter_var = tk.StringVar(value="全部状态")
         self.stats_var = tk.StringVar(value="")
-        self.cpa_search_var = tk.StringVar(value="")
-        self.cpa_plan_filter_var = tk.StringVar(value="全部标签")
-        self.cpa_status_filter_var = tk.StringVar(value="全部状态")
         self.sub2api_search_var = tk.StringVar(value="")
         self.sub2api_group_filter_var = tk.StringVar(value="全部分组")
         self.sub2api_status_filter_var = tk.StringVar(value="全部状态")
@@ -144,11 +134,7 @@ class TokenManagerGUI(
         self.oauth_scope_var = tk.StringVar(value=str(oauth.get("scope") or ""))
 
         integrations = self.config.get("integrations") or {}
-        cpa = integrations.get("cpa") or {}
         sub2api = integrations.get("sub2api") or {}
-        self.cpa_url_var = tk.StringVar(value=str(cpa.get("api_url") or ""))
-        self.cpa_key_var = tk.StringVar(value=str(cpa.get("api_key") or ""))
-        self.cpa_container_var = tk.StringVar(value=str(cpa.get("container_name") or "cli-proxy-api"))
         self.sub2api_auth_mode_var = tk.StringVar(value=str(sub2api.get("auth_mode") or "auto"))
         self.sub2api_url_var = tk.StringVar(value=str(sub2api.get("api_url") or ""))
         self.sub2api_key_var = tk.StringVar(value=str(sub2api.get("api_key") or ""))
@@ -156,9 +142,9 @@ class TokenManagerGUI(
         self.sub2api_admin_email_var = tk.StringVar(value=str(sub2api.get("admin_email") or ""))
         self.sub2api_admin_password_var = tk.StringVar(value=str(sub2api.get("admin_password") or ""))
 
-        self.upload_target_var = tk.StringVar(value="cpa")
-        self.import_source_var = tk.StringVar(value="CPA")
-        self.preview_format_var = tk.StringVar(value="CPA")
+        self.upload_target_var = tk.StringVar(value='sub2api')
+        self.import_source_var = tk.StringVar(value='Sub2API')
+        self.preview_format_var = tk.StringVar(value='Sub2API')
         self.auth2fa_mode_hint_var = tk.StringVar(value="")
         self.auth2fa_stats_var = tk.StringVar(value="待授权 0")
         self.auth2fa_output_var = tk.StringVar(value="")
