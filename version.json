@@ -1,6 +1,6 @@
 {
   "name": "OpenAI Token Manager",
-  "version": "2.2.0-88api.8",
+  "version": "2.2.0-88api.9",
   "description": "本地OpenAI账号与Sub2API远端管理工具",
   "author": "Based on Reverse Engineering",
   "license": "Personal Use Only",
@@ -104,6 +104,12 @@
         "常显全区域日志与悬浮清空按钮",
         "右上导航动作及标题行统计",
         "窗口缩放日志区域保底可见"
+      ]
+    },
+    "2.2.0-88api.9": {
+      "date": "2026-09-18",
+      "changes": [
+        "修复任务忙碌时重复点击刷新造成的弹窗/定时器锁重入死锁，改为非阻塞日志提示"
       ]
     }
   }

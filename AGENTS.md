@@ -17,3 +17,5 @@
 - 回归命令：`python -m unittest discover -s tests -v`、`python -m compileall -q token_manager tests`、`git diff --check`。GUI测试使用临时目录和合成账号，禁止载入生产凭据。
 - 打包：`python build.py --name OpenAI-Token-Manager-88API --entry-point main.py`，无需`--clean`；不删除用户已有dist内运行数据。
 - GitHub发布、全量生产自动恢复需依据当次用户授权，不因为凭据可用而自行启用。
+
+- 2.2.0-88api.9：任务忙碌或自动维护运行时，重复点击刷新等操作仅记录日志提示，不再弹出阻塞提示框；禁止在任务锁内调用Tk弹窗或其他UI回调，避免定时器重入死锁。

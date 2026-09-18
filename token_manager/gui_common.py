@@ -338,10 +338,16 @@ class GUICommonMixin:
 
     def run_background(self, status: str, worker, on_done):
         with self._running_job_lock:
-            if self.running_job or self.auto_refresh_running:
-                messagebox.showinfo("提示", "已有任务在运行")
-                return
-            self.running_job = True
+            busy = self.running_job or self.auto_refresh_running
+            if not busy:
+                self.running_job = True
+        # Tk modal dialogs pump timers and completion callbacks. Never open one
+        # while holding this non-reentrant lock: those callbacks call is_running.
+        # Keep repeated clicks non-modal and leave the current job untouched.
+        if busy:
+            reason = "自动维护正在运行，请先停止维护" if self.auto_refresh_running else "已有任务在运行，请等待完成"
+            self.log(f"未启动「{status}」：{reason}", "warning")
+            return
         self.status_var.set(status)
 
         def runner():
