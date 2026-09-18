@@ -63,6 +63,8 @@ def default_config() -> dict[str, Any]:
                 "ws_mode": "ctx_pool",
                 "auto_pause_on_expired": True,
                 "auto_reauthorize_401": True,
+                "auto_monitor_uploaded_accounts": True,
+                "auto_enable_schedulable": True,
                 "recovery_test_enabled": True,
                 "recovery_test_model": "gpt-5.5",
                 "default_list_group_ids": "2",

@@ -19,7 +19,7 @@ def remote_health(remote):
         return '已停用'
     if remote.get('status') != 'active':
         return '授权异常' if '401' in str(remote.get('error_message', '')) else '远端异常'
-    if not remote.get('schedulable', True):
+    if remote.get('schedulable') is False:
         return '已启用·停调度'
     expiry = parse_time(remote.get('expires_at'))
     if expiry and expiry.timestamp() <= time.time():
@@ -28,6 +28,8 @@ def remote_health(remote):
         until = parse_time(remote.get(field))
         if until and until.timestamp() > time.time():
             return '已启用·冷却中'
+    if remote.get('schedulable') is not True:
+        return '已启用·调度未知'
     return '已启用·可调度'
 
 

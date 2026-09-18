@@ -595,6 +595,21 @@ def get_sub2api_account_credentials(settings, account_id, *, proxy_url=''):
     return {**current, 'credentials': credentials}
 
 
+def set_sub2api_schedulable(settings, account_id, enabled=True, *, proxy_url=''):
+    """Set persistent scheduler participation and verify the read-back."""
+    response = _sub2api_request(
+        settings, 'POST', f'/api/v1/admin/accounts/{int(account_id)}/schedulable',
+        proxy_url=proxy_url, json={'schedulable': bool(enabled)},
+    )
+    if response.status_code not in (200, 201):
+        raise RuntimeError(redact_error(_response_error(response)))
+    _sub2api_response_data(response)
+    verified = get_sub2api_account_credentials(settings, account_id, proxy_url=proxy_url)
+    if verified.get('schedulable') is not bool(enabled):
+        raise RuntimeError('调度开关已提交，但远端读回校验不通过')
+    return verified
+
+
 def apply_sub2api_credentials(local, remote, settings, *, proxy_url=''):
     # Re-read just before updating: don't reactivate a manually paused account,
     # overwrite a rotated refresh token, or write to a changed workspace.

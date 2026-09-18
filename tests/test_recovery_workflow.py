@@ -37,6 +37,7 @@ class WorkflowTest(unittest.TestCase):
         self.auth = self.enterContext(patch('token_manager.recovery_support.authorize_saved_account', return_value=self.new))
         self.probe = self.enterContext(patch('token_manager.recovery_support.test_sub2api_account', return_value={'ok':True,'model':'gpt-5.5','checked_at':1234}))
         self.detail = self.enterContext(patch('token_manager.integrations.get_sub2api_account', side_effect=lambda *a,**kw:deepcopy(self.remote)))
+        self.schedule = self.enterContext(patch('token_manager.integrations.set_sub2api_schedulable', side_effect=lambda *a,**kw:{**self.remote, 'status':'active', 'schedulable':True, 'credentials':{'access_token':'new','refresh_token':'new-rt'}}))
         def apply(local, remote, *a, **kw):
             self.remote.update(status='active', error_message='')
             self.remote['credentials'].update(access_token=local['access_token'],refresh_token=local['refresh_token'])
@@ -55,6 +56,18 @@ class WorkflowTest(unittest.TestCase):
         self.auth.assert_called_once()
         self.apply.assert_called_once()
         self.probe.assert_called_once()
+
+    def test_uploaded_account_is_auto_enrolled_without_monitor_toggle(self):
+        local = self.store.load_all()[0]
+        local['sub2api_recovery'] = {}
+        local['uploads'] = {'sub2api': {'ok': True}}
+        self.store.save_record(local, filename=local.get('_filename'))
+        result = recovery_cycle(self.store, self.settings)
+        self.assertEqual(result['recovered'], 1)
+        saved = self.store.load_all()[0]
+        self.assertTrue(saved['sub2api_recovery']['enabled'])
+        self.assertTrue(saved['sub2api_recovery']['auto_enrolled'])
+        self.auth.assert_called_once()
 
     def test_redacted_list_fetches_only_target_credentials_before_recovery(self):
         full = deepcopy(self.remote)
@@ -99,11 +112,8 @@ class WorkflowTest(unittest.TestCase):
     def test_cooldown_waits_before_probe(self):
         self.remote['schedulable']=False
         recovery_cycle(self.store,self.settings)
-        self.probe.assert_not_called()
-        self.assertTrue(self.store.load_all()[0]['sub2api_recovery']['verification_pending'])
-        self.remote['schedulable']=True
-        recovery_cycle(self.store,self.settings)
         self.probe.assert_called_once()
+        self.schedule.assert_called_once()
 
     def test_missing_material_resumes_after_vault_save(self):
         self.vault.return_value.load.return_value={}

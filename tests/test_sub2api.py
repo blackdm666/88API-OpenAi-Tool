@@ -40,6 +40,7 @@ class Fixture:
             "type": "oauth",
             "name": self.local["email"],
             "status": "error",
+            "schedulable": True,
             "error_message": "OAuth 401: expired",
             "credentials": {
                 "email": self.local["email"],

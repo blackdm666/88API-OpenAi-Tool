@@ -35,18 +35,38 @@ def recovery_cycle(store, settings, *, log_fn=None, cancelled=lambda: False):
     from .credential_vault import CredentialVault, credential_revision
     from .recovery_support import (NeedsUser, authorize_saved_account, remote_health,
                                    test_sub2api_account, validate_new_credentials)
-    from .integrations import get_sub2api_account, get_sub2api_account_credentials
+    from .integrations import get_sub2api_account, get_sub2api_account_credentials, set_sub2api_schedulable
     from .utils import now_rfc3339
 
     cfg = (settings.get("integrations") or {}).get("sub2api") or {}
     server = normalize_server_url(cfg.get("api_url", ""))
-    locals_ = [r for r in store.load_all() if (r.get("sub2api_recovery") or {}).get("enabled")]
+    all_locals = store.load_all()
     result = {"checked": 0, "recovered": 0, "blocked": 0, "records": []}
-    if not locals_:
-        return result
     proxy = settings.get("http_proxy", "")
     remotes = fetch_sub2api_accounts(settings, proxy_url=proxy, filters={"platform": "openai"})
     result['records'] = remotes
+    locals_ = [r for r in all_locals if (r.get("sub2api_recovery") or {}).get("enabled")]
+    if cfg.get('auto_monitor_uploaded_accounts', True):
+        for record in all_locals:
+            enrollment = dict(record.get('sub2api_recovery') or {})
+            if enrollment.get('enabled') or enrollment.get('manual_disabled'):
+                continue
+            upload_state = (record.get('uploads') or {}).get('sub2api') or {}
+            if not upload_state.get('ok'):
+                continue
+            try:
+                remote = match_remote({**record, 'sub2api_recovery': {}}, remotes)
+            except Exception:
+                remote = None
+            if not remote:
+                continue
+            enrollment.update(enabled=True, auto_enrolled=True, server=server,
+                              remote_id=remote['id'], status='待检查', message='已根据上传记录自动纳入维护')
+            record['sub2api_recovery'] = enrollment
+            store.save_record(record, filename=record.get('_filename'))
+            locals_.append(record)
+    if not locals_:
+        return result
     saved_accounts, vault_error = {}, ''
     if cfg.get('auto_reauthorize_401', True):
         try:
@@ -84,7 +104,16 @@ def recovery_cycle(store, settings, *, log_fn=None, cancelled=lambda: False):
                     remotes[i] = {**row, **remote}
                     break
 
+        def ensure_schedulable(remote):
+            if (remote.get('status') == 'active' and remote.get('schedulable') is False
+                    and cfg.get('auto_enable_schedulable', True)):
+                stage('启用调度中')
+                remote = set_sub2api_schedulable(settings, remote['id'], True, proxy_url=proxy)
+                observe(remote)
+            return remote
+
         def verify_and_test(remote):
+            remote = ensure_schedulable(remote)
             observe(remote)
             if not state['credentials_match'] or remote.get('status') != 'active':
                 raise RuntimeError('远端凭据或启用状态读回不通过')
@@ -152,6 +181,7 @@ def recovery_cycle(store, settings, *, log_fn=None, cancelled=lambda: False):
                     raise NeedsUser('凭据读取后身份不一致，停止恢复')
                 remote = {**remote, **detail}
             observe(remote)
+            remote = ensure_schedulable(remote)
             kind = auth_failure_kind(remote)
             local_changed = bool(state.get('revision') and state['revision'] != revision)
             material_changed = state.get('credential_revision', '') != saved_revision

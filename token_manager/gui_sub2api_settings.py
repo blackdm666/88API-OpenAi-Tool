@@ -54,9 +54,13 @@ class GUISub2APISettingsMixin:
         ttk.Entry(display, textvariable=default_groups).pack(fill='x')
         ttk.Label(display, text='默认 2。多个分组用逗号分隔，留空显示全部。\n\n启动程序、重置筛选时使用；保存修改后立即应用。列表中仍可临时多选其他分组。\n\n仅影响右侧账号列表的默认筛选，不改变上传分组或自动维护的账号范围。', wraplength=560, style='CardSubtle.TLabel').pack(anchor='w', pady=16)
         reauthorize = tk.BooleanVar(value=bool(cfg.get('auto_reauthorize_401', True)))
+        auto_monitor = tk.BooleanVar(value=bool(cfg.get('auto_monitor_uploaded_accounts', True)))
+        auto_schedule = tk.BooleanVar(value=bool(cfg.get('auto_enable_schedulable', True)))
         test_enabled = tk.BooleanVar(value=bool(cfg.get('recovery_test_enabled', True)))
         test_model = tk.StringVar(value=str(cfg.get('recovery_test_model') or 'gpt-5.5'))
         ttk.Checkbutton(recovery, text='401 后使用已保存的 2FA 资料自动重新授权', variable=reauthorize).pack(anchor='w', pady=8)
+        ttk.Checkbutton(recovery, text='已成功上传且唯一匹配的账号自动纳入维护（无需手动点“监控选中”）', variable=auto_monitor).pack(anchor='w', pady=8)
+        ttk.Checkbutton(recovery, text='恢复后自动开启 Sub2API 调度并读回确认', variable=auto_schedule).pack(anchor='w', pady=8)
         ttk.Checkbutton(recovery, text='补授权并核验启用、调度状态后，执行一次 Sub2API 模型测试', variable=test_enabled).pack(anchor='w', pady=8)
         ttk.Label(recovery, text='测试模型（默认 gpt-5.5）', style='Card.TLabel').pack(anchor='w', pady=(16, 4))
         ttk.Entry(recovery, textvariable=test_model).pack(fill='x')
@@ -149,7 +153,7 @@ class GUISub2APISettingsMixin:
             ]
             params["auto_pause_on_expired"] = pause.get()
             params['ws_mode'] = WS_MODES[params['ws_mode']]
-            params.update(auto_reauthorize_401=reauthorize.get(), recovery_test_enabled=test_enabled.get(), recovery_test_model=test_model.get().strip())
+            params.update(auto_reauthorize_401=reauthorize.get(), auto_monitor_uploaded_accounts=auto_monitor.get(), auto_enable_schedulable=auto_schedule.get(), recovery_test_enabled=test_enabled.get(), recovery_test_model=test_model.get().strip())
             group_ids = default_list_group_ids(default_groups.get())
             params['default_list_group_ids'] = ','.join(str(i) for i in sorted(group_ids))
             if not params['recovery_test_model'] or len(params['recovery_test_model']) > 160 or any(c.isspace() for c in params['recovery_test_model']):
@@ -316,6 +320,7 @@ class GUISub2APISettingsMixin:
                     )
                 state = {
                     "enabled": enabled,
+                    "manual_disabled": not enabled,
                     "status": "待检查" if enabled else "未监控",
                 }
                 if enabled:
@@ -340,11 +345,11 @@ class GUISub2APISettingsMixin:
             "自动维护规则",
             "需要点击“启动自动维护”，程序关闭后停止运行。\n\n"
             "① 本地到期维护：默认每60秒检查；仅刷新未过期且剩余≤300秒的账号。\n"
-            "② Sub2API恢复：仅处理左侧手动开启监控、身份唯一匹配的账号。\n"
+            "② Sub2API恢复：默认自动纳入已成功上传且唯一匹配的账号；也可手动指定监控范围。\n"
             "③ 远端error且明确401时刷新OAuth凭据，再写回原账号并校验；普通429与临时停调度交由服务器处理。\n"
             "④ 保留原分组、并发、代理、指纹设置，不删除或新建远端账号。\n"
             "⑤ 开启自动重新授权后，401不可刷新时使用加密保存的2FA资料登录；身份校验后落盘并补授权。缺资料、登录拦截或身份不符时等待人工。\n"
-            "⑥ 补授权后读回凭据及启用/调度状态，再执行一次Sub2API原生模型测试；模型在Sub2API设置→自动维护中调整。\n"
+            "⑥ 补授权后读回凭据；active账号若关闭了持久调度，会自动开启并读回确认，再执行一次Sub2API原生模型测试。模型在Sub2API设置→自动维护中调整。\n"
             "⑦ 失败5/10/20分钟退避，最多3次；一小时内重新授权最多3次。上传失败只重试上传，不重复登录。主动停用账号不启用。\n\n"
             "停止维护会阻止后续操作；正在进行的网络请求需等待返回。",
         )

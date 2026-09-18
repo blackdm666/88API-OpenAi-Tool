@@ -101,7 +101,7 @@ class GUISub2APIMixin:
                 continue
             if status_filter == "invalidated" and not is_sub2api_invalidated(record):
                 continue
-            if status_filter == "unschedulable" and record.get("schedulable", True):
+            if status_filter == "unschedulable" and record.get("schedulable") is not False:
                 continue
             if status_filter not in {"", "全部状态".lower(), "invalidated", "unschedulable"} and status_filter != status:
                 continue
@@ -170,7 +170,7 @@ class GUISub2APIMixin:
                 inactive_count += 1
             elif status == "error":
                 error_count += 1
-            if not record.get("schedulable", True):
+            if record.get("schedulable") is False:
                 unschedulable_count += 1
 
             iid = self._build_sub2api_row_id(record, idx)
@@ -180,7 +180,7 @@ class GUISub2APIMixin:
                 tags = ("invalidated",)
             elif status == "error":
                 tags = ("error",)
-            elif not record.get("schedulable", True) or status == "inactive":
+            elif record.get("schedulable") is False or status == "inactive":
                 tags = ("warning",)
             self.sub2api_tree.insert(
                 "",
