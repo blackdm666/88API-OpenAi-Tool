@@ -28,9 +28,17 @@ class HoverTooltip:
         self.widget, self.text, self.delay = widget, str(text), delay
         self.tip = None
         self.job = None
+        self.owner = widget.winfo_toplevel()
+        self._owner_unmap_bind = None
         widget.bind('<Enter>', self._enter, add='+')
         widget.bind('<Leave>', self._leave, add='+')
         widget.bind('<Destroy>', self._destroy, add='+')
+        try:
+            self._owner_unmap_bind = self.owner.bind(
+                "<Unmap>", self._owner_unmapped, add="+"
+            )
+        except tk.TclError:
+            pass
 
     def _enter(self, _event=None):
         self._cancel()
@@ -50,7 +58,11 @@ class HoverTooltip:
 
     def _show(self):
         self.job = None
-        if self.tip is not None or not self.widget.winfo_exists():
+        if (
+            self.tip is not None
+            or not self.widget.winfo_exists()
+            or not self.widget.winfo_ismapped()
+        ):
             return
         tip = tk.Toplevel(self.widget)
         tip.wm_overrideredirect(True)
@@ -75,6 +87,11 @@ class HoverTooltip:
         tip.geometry(f'+{x}+{y}')
         self.tip = tip
 
+    def _owner_unmapped(self, _event=None):
+        """Do not leave an override-redirect tooltip alive during minimize."""
+        self._cancel()
+        self._hide()
+
     def _hide(self):
         if self.tip is not None:
             try:
@@ -86,6 +103,12 @@ class HoverTooltip:
     def _destroy(self, _event=None):
         self._cancel()
         self._hide()
+        if self._owner_unmap_bind is not None:
+            try:
+                self.owner.unbind("<Unmap>", self._owner_unmap_bind)
+            except tk.TclError:
+                pass
+            self._owner_unmap_bind = None
 
 
 class UsageTreeview(ttk.Treeview):
@@ -94,9 +117,11 @@ class UsageTreeview(ttk.Treeview):
         super().__init__(parent, **kwargs)
         self._bar_widgets = []
         self._bar_refresh = None
-        for event in ('<Configure>', '<Map>', '<MouseWheel>', '<Button-4>', '<Button-5>', '<ButtonRelease-1>', '<KeyRelease>'):
+        for event in ('<Configure>', '<MouseWheel>', '<Button-4>', '<Button-5>', '<ButtonRelease-1>', '<KeyRelease>'):
             self.bind(event, self.redraw_bars, add='+')
         self.bind('<<TreeviewSelect>>', self._sync_selection_bars, add='+')
+        self.bind('<Unmap>', self._hide_bars_for_unmap, add='+')
+        self.bind('<Map>', self._restore_bars_after_map, add='+')
         self.bind('<Destroy>', self._cancel_bar_refresh, add='+')
 
     def _cancel_bar_refresh(self, event):
@@ -153,6 +178,24 @@ class UsageTreeview(ttk.Treeview):
         self.update_idletasks()
         self._draw_bars()
 
+    def _hide_bars_for_unmap(self, _event=None):
+        """Hide overlay child windows while Windows composites the minimize."""
+        if self._bar_refresh is not None:
+            try:
+                self.after_cancel(self._bar_refresh)
+            except tk.TclError:
+                pass
+            self._bar_refresh = None
+        for canvas in self._bar_widgets:
+            try:
+                canvas.place_forget()
+            except tk.TclError:
+                pass
+
+    def _restore_bars_after_map(self, _event=None):
+        if self.winfo_ismapped():
+            self.redraw_bars()
+
     def _select_bar_row(self, event, row):
         if event.state & 4:
             if row in self.selection(): self.selection_remove(row)
@@ -184,9 +227,16 @@ class UsageTreeview(ttk.Treeview):
                 # Do not cover headers or paint outside horizontally clipped cells.
                 if x < 0 or x+w > self.winfo_width() or y+h > self.winfo_height(): continue
                 while used >= len(self._bar_widgets):
-                    self._bar_widgets.append(tk.Canvas(self,highlightthickness=0,borderwidth=0))
+                    self._bar_widgets.append(
+                        tk.Canvas(
+                            self,
+                            highlightthickness=0,
+                            borderwidth=0,
+                            background="#ffffff",
+                            takefocus=False,
+                        )
+                    )
                 canvas=self._bar_widgets[used];used+=1
-                canvas.place(x=x+1,y=y+1,width=max(1,w-2),height=max(1,h-2))
                 canvas.delete('all')
                 canvas.configure(background='#e8f0ff' if row in selected else '#ffffff')
                 text=self.set(row,column)
@@ -202,6 +252,9 @@ class UsageTreeview(ttk.Treeview):
                     canvas.create_text((w-2)/2,(h-2)/2,text=text,fill='#647681',font=('Microsoft YaHei UI',9))
                 canvas.bind('<Button-1>',lambda e,r=row:self._select_bar_row(e,r))
                 canvas.bind('<MouseWheel>',self._scroll_bar)
+                # Draw and configure before mapping the child window. This
+                # avoids a default black frame during Windows minimize/restore.
+                canvas.place(x=x+1,y=y+1,width=max(1,w-2),height=max(1,h-2))
         for canvas in self._bar_widgets[used:]: canvas.place_forget()
 
 

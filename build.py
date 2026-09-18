@@ -253,7 +253,15 @@ a = Analysis(
     hookspath=[],
     hooksconfig={{}},
     runtime_hooks=[r'{runtime_hook_literal}'],
-    excludes=[],
+    # Never bundle machine-local sitecustomize modules. Build environments
+    # may use one for tooling workarounds, but application startup must not.
+    excludes=[
+        'sitecustomize',
+        'usercustomize',
+        'setuptools',
+        'pkg_resources',
+        '_distutils_hack',
+    ],
     noarchive=False,
 )
 

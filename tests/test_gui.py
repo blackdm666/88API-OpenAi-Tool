@@ -5,10 +5,66 @@ from unittest.mock import patch
 
 from token_manager.config import default_config
 from token_manager.gui import TokenManagerGUI
-from token_manager.gui_widgets import CheckList, center_window
+from token_manager.gui_widgets import CheckList, HoverTooltip, UsageTreeview, center_window
 
 
 class LayoutTest(unittest.TestCase):
+    def test_minimize_hides_transient_overlay_windows_and_restores_bars(self):
+        root = tk.Tk()
+        root.geometry("640x320+0+0")
+        try:
+            button = tk.Button(root, text="操作")
+            button.pack()
+            tooltip = HoverTooltip(button, "功能说明", delay=1000)
+
+            tree = UsageTreeview(
+                root,
+                columns=("name", "quota7"),
+                show="headings",
+                height=4,
+            )
+            tree.heading("name", text="账号")
+            tree.heading("quota7", text="7d已用")
+            tree.column("name", width=320)
+            tree.column("quota7", width=180)
+            tree.pack(fill="both", expand=True)
+            tree.insert("", "end", values=("account@example.test", "42.0%"))
+
+            root.update()
+            tree._draw_bars()
+            root.update_idletasks()
+            self.assertTrue(any(bar.winfo_ismapped() for bar in tree._bar_widgets))
+
+            tooltip._enter()
+            self.assertIsNotNone(tooltip.job)
+            root.iconify()
+            root.update()
+            self.assertEqual(root.state(), "iconic")
+            self.assertIsNone(tooltip.job)
+            self.assertIsNone(tooltip.tip)
+            self.assertFalse(any(bar.winfo_ismapped() for bar in tree._bar_widgets))
+
+            for _ in range(3):
+                root.deiconify()
+                root.update()
+                root.update_idletasks()
+                self.assertTrue(
+                    any(bar.winfo_ismapped() for bar in tree._bar_widgets)
+                )
+                tooltip._show()
+                self.assertIsNotNone(tooltip.tip)
+                root.iconify()
+                root.update()
+                self.assertEqual(root.state(), "iconic")
+                self.assertIsNone(tooltip.tip)
+                self.assertFalse(
+                    any(bar.winfo_ismapped() for bar in tree._bar_widgets)
+                )
+        finally:
+            for event in root.tk.call("after", "info"):
+                root.after_cancel(event)
+            root.destroy()
+
     def test_remote_rows_have_space_and_configuration_roundtrips(self):
         with tempfile.TemporaryDirectory() as folder:
             cfg = default_config()
