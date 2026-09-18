@@ -66,13 +66,14 @@ def png_to_ico(png_path: Path, ico_path: Path) -> Path:
     with Image.open(png_path) as image:
         rgba = image.convert("RGBA")
         background = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
-        flattened = Image.alpha_composite(background, rgba).convert("RGB")
+        source = Image.alpha_composite(background, rgba).convert("RGB")
         # The taskbar uses the 16/24/32px icon layers. Crop empty black
         # margins first so the supplied logo remains legible at those sizes.
         difference = ImageChops.difference(
-            flattened, Image.new("RGB", flattened.size, (0, 0, 0))
+            source, Image.new("RGB", source.size, (0, 0, 0))
         ).convert("L")
         bbox = difference.point(lambda value: 255 if value > 12 else 0).getbbox()
+        flattened = source
         if bbox:
             left, top, right, bottom = bbox
             padding = int(max(right - left, bottom - top) * 0.05)
@@ -84,14 +85,55 @@ def png_to_ico(png_path: Path, ico_path: Path) -> Path:
             side = max(crop_width, crop_height)
             compact = Image.new("RGB", (side, side), (0, 0, 0))
             compact.paste(
-                flattened.crop((left, top, right, bottom)),
+                source.crop((left, top, right, bottom)),
                 ((side - crop_width) // 2, (side - crop_height) // 2),
             )
             flattened = compact
         flattened = flattened.filter(
             ImageFilter.UnsharpMask(radius=1.1, percent=130, threshold=2)
         )
-        flattened.save(ico_path, format="ICO", sizes=[(256, 256), (128, 128), (64, 64), (32, 32), (16, 16)])
+        # At taskbar sizes the full wordmark cannot be legible. Use a
+        # purpose-built high-contrast "88" mark for the small layers while
+        # retaining the full supplied logo at 64px and above.
+        source_width, source_height = source.size
+        small_box = (
+            int(source_width * 0.11),
+            int(source_height * 0.38),
+            int(source_width * 0.53),
+            int(source_height * 0.62),
+        )
+        small = source.crop(small_box)
+        small_side = max(small.size)
+        small_canvas = Image.new("RGB", (small_side, small_side), (3, 7, 17))
+        small_canvas.paste(
+            small,
+            ((small_side - small.width) // 2, (small_side - small.height) // 2),
+        )
+        small_canvas = small_canvas.filter(
+            ImageFilter.UnsharpMask(radius=1.0, percent=160, threshold=2)
+        )
+        small_layers = [
+            small_canvas.resize((size, size), Image.Resampling.LANCZOS)
+            for size in (16, 24, 32, 48)
+        ]
+        large_layers = [
+            flattened.resize((size, size), Image.Resampling.LANCZOS)
+            for size in (64, 128, 256)
+        ]
+        large_layers[-1].save(
+            ico_path,
+            format="ICO",
+            sizes=[
+                (16, 16),
+                (24, 24),
+                (32, 32),
+                (48, 48),
+                (64, 64),
+                (128, 128),
+                (256, 256),
+            ],
+            append_images=small_layers + large_layers[:-1],
+        )
     return ico_path
 
 

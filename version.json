@@ -1,6 +1,6 @@
 {
   "name": "88API号池自动维护工具",
-  "version": "2.2.0-88api.37",
+  "version": "2.2.0-88api.38",
   "description": "本地OpenAI账号与Sub2API远端管理工具",
   "author": "Based on Reverse Engineering",
   "license": "Personal Use Only",
@@ -301,6 +301,12 @@
       "date": "2026-09-18",
       "changes": [
         "优化高清88API图标的小尺寸ICO层，裁剪黑边并增强锐度，改善任务栏显示"
+      ]
+    },
+    "2.2.0-88api.38": {
+      "date": "2026-09-18",
+      "changes": [
+        "为任务栏16至48像素图标使用清晰的88标志层，大图标继续使用完整高清Logo"
       ]
     }
   }
