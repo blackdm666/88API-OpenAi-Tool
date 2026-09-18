@@ -1,6 +1,8 @@
 import base64
 import threading
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 from tools.auth_support import (
@@ -10,7 +12,7 @@ from tools.auth_support import (
     continuation_without_orgs,
     failure_advice,
 )
-from tools.auth_2fa_browser import _wait_for_target
+from tools.auth_2fa_browser import _cleanup_browser_profile, _wait_for_target
 from token_manager.gui_auth import GUIAuthMixin
 from token_manager.oauth import OAuthCallbackServer
 
@@ -114,6 +116,21 @@ class AuthSupportTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "浏览器进程已退出"):
                 _wait_for_target(9333, 35, process)
             targets.assert_called_once()
+
+    def test_browser_profile_cleanup_removes_only_one_child_profile(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder) / "profiles"
+            profile = root / "account_abc"
+            sibling = root / "account_other"
+            (profile / "Cache").mkdir(parents=True)
+            (profile / "Cache" / "data.bin").write_bytes(b"cache")
+            sibling.mkdir(parents=True)
+            self.assertTrue(_cleanup_browser_profile(profile, root))
+            self.assertFalse(profile.exists())
+            self.assertTrue(sibling.exists())
+            self.assertFalse(_cleanup_browser_profile(profile, root))
+            with self.assertRaises(ValueError):
+                _cleanup_browser_profile(root, root)
 
     def test_challenge_advice_requires_official_login(self):
         self.assertIn("官方浏览器", failure_advice("启动后被 Cloudflare 拦截了"))

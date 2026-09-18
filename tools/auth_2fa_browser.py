@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -190,6 +191,18 @@ def _default_save_dir() -> Path:
 
 def _default_profile_root(save_dir: Path) -> Path:
     return _ensure_dir(save_dir / "profiles")
+
+
+def _cleanup_browser_profile(profile_dir: Path, profile_root: Path) -> bool:
+    """Remove one temporary browser profile without touching its parent."""
+    profile_path = Path(profile_dir).resolve()
+    root_path = Path(profile_root).resolve()
+    if profile_path == root_path or root_path not in profile_path.parents:
+        raise ValueError("拒绝清理 profile 根目录之外的路径")
+    if not profile_path.exists():
+        return False
+    shutil.rmtree(profile_path)
+    return True
 
 
 def _sanitize_profile_name(email: str) -> str:
@@ -1277,6 +1290,31 @@ def authorize_account_browser(
             except Exception:
                 pass
         _stop_browser(browser_process)
+        try:
+            removed = _cleanup_browser_profile(profile_dir, _default_profile_root(save_dir))
+            _push_log(
+                logs,
+                {
+                    "step": "browser_profile_cleanup",
+                    "ts": now_rfc3339(),
+                    "removed": bool(removed),
+                },
+                quiet=quiet,
+                include_secrets=include_secrets,
+                log_fn=log_fn,
+            )
+        except Exception as cleanup_exc:
+            _push_log(
+                logs,
+                {
+                    "step": "browser_profile_cleanup_failed",
+                    "ts": now_rfc3339(),
+                    "error": str(cleanup_exc),
+                },
+                quiet=quiet,
+                include_secrets=include_secrets,
+                log_fn=log_fn,
+            )
 
 
 def run_authorize_batch_lines_browser(
