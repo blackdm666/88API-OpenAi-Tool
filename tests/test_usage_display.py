@@ -2,13 +2,31 @@ import unittest
 from datetime import datetime, timezone
 from unittest.mock import patch
 
-from token_manager.usage_display import quota_cell, snapshot_usage, usage_details, sort_account_rows
+from token_manager.usage_display import quota_cell, snapshot_usage, usage_details, sort_account_rows, scheduling_cell
 from token_manager.integrations import fetch_sub2api_accounts, fetch_sub2api_usage
 from token_manager.config import default_config
 from test_sub2api import response
 
 
 class UsageTest(unittest.TestCase):
+    def test_scheduling_distinguishes_switch_activation_and_cooldown(self):
+        now = datetime(2026, 9, 18, tzinfo=timezone.utc)
+        cases = [
+            ({'schedulable':True,'status':'active'}, '参与调度'),
+            ({'schedulable':False,'status':'active'}, '已关闭'),
+            ({'status':'active'}, '未知'),
+            ({'schedulable':True,'status':'inactive'}, '开启·账号停用'),
+            ({'schedulable':True,'status':'error'}, '开启·账号异常'),
+            ({'schedulable':True,'status':'active','temp_unschedulable_until':'2099-01-01T00:00:00Z'}, '开启·临时冷却'),
+            ({'schedulable':True,'status':'active','rate_limit_reset_at':'2099-01-01T00:00:00Z'}, '开启·限流冷却'),
+            ({'schedulable':True,'status':'active','overload_until':'2099-01-01T00:00:00Z'}, '开启·过载冷却'),
+            ({'schedulable':True,'status':'active','rate_limit_reset_at':'2020-01-01T00:00:00Z'}, '参与调度'),
+            ({'schedulable':True,'status':'active','expires_at':1,'auto_pause_on_expired':True}, '开启·已到期'),
+        ]
+        for record, expected in cases:
+            with self.subTest(record=record):
+                self.assertEqual(scheduling_cell(record,now=now),expected)
+
     def test_id_and_quota_sorting_are_numeric_and_missing_goes_last(self):
         rows=[{'id':100,'extra':{'codex_5h_used_percent':9}}, {'id':2,'extra':{'codex_5h_used_percent':80}}, {'id':11}]
         self.assertEqual([r['id'] for r in sort_account_rows(rows)],[2,11,100])

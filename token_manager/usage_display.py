@@ -70,6 +70,35 @@ def usage_details(usage):
     return "\n".join(lines)
 
 
+def scheduling_cell(record, *, now=None):
+    """Show the scheduling switch separately from account activation/cooldown."""
+    enabled = record.get('schedulable')
+    if enabled is False:
+        return '已关闭'
+    if enabled is not True:
+        return '未知'
+    if record.get('status') == 'inactive':
+        return '开启·账号停用'
+    if record.get('status') != 'active':
+        return '开启·账号异常'
+    current = now or datetime.now(timezone.utc)
+    expiry = record.get('expires_at')
+    if isinstance(expiry, (int, float)) and not isinstance(expiry, bool):
+        try:
+            expiry = datetime.fromtimestamp(expiry, timezone.utc)
+        except (ValueError, OSError, OverflowError):
+            expiry = None
+    else:
+        expiry = parse_time(expiry)
+    if record.get('auto_pause_on_expired') and expiry and expiry <= current:
+        return '开启·已到期'
+    for field, label in [('temp_unschedulable_until','临时冷却'), ('rate_limit_reset_at','限流冷却'), ('overload_until','过载冷却')]:
+        until = parse_time(record.get(field))
+        if until and until > current:
+            return '开启·' + label
+    return '参与调度'
+
+
 def sort_account_rows(records, column='id', descending=False, usage_reader=snapshot_usage):
     known, missing = [], []
     for record in records:
@@ -79,6 +108,7 @@ def sort_account_rows(records, column='id', descending=False, usage_reader=snaps
             value=float(text[:-1]) if text.endswith('%') else None
         elif column == 'email': value=str(record.get('name') or record.get('email') or '').casefold()
         elif column == 'groups': value=', '.join(record.get('group_names') or []).casefold()
+        elif column == 'scheduling': value=scheduling_cell(record)
         elif column == 'error': value=str(record.get('error_message') or '').casefold()
         else: value=str(record.get(column) or '').casefold()
         (missing if value is None else known).append((value,record))

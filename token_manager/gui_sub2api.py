@@ -8,7 +8,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 from .gui_widgets import CheckList
 from .integrations import fetch_sub2api_usage, fetch_sub2api_accounts
-from .usage_display import snapshot_usage, quota_cell, sort_account_rows
+from .usage_display import snapshot_usage, quota_cell, sort_account_rows, scheduling_cell
 from .sub2api_policy import normalize_server_url, match_remote, default_list_group_ids
 
 from .services import (
@@ -191,6 +191,7 @@ class GUISub2APIMixin:
                     record.get("name") or record.get("email", ""),
                     self._sub2api_groups_text(record),
                     record.get("status", ""),
+                    scheduling_cell(record),
                     quota_cell(self.usage_for_record(record),"five_hour"),
                     quota_cell(self.usage_for_record(record),"seven_day"),
                     self._sub2api_error_summary(record),
@@ -276,7 +277,7 @@ class GUISub2APIMixin:
             return None
 
     def sort_description(self):
-        labels={'id':'ID','email':'账号名称','groups':'分组','status':'状态','quota5':'5h已用','quota7':'7d已用','error':'错误'}
+        labels={'id':'ID','email':'账号名称','groups':'分组','status':'状态','scheduling':'调度','quota5':'5h已用','quota7':'7d已用','error':'错误'}
         return labels[self.sub2api_sort_column]+('降序' if self.sub2api_sort_descending else '升序')
 
     def sorted_sub2api_records(self):
@@ -288,7 +289,7 @@ class GUISub2APIMixin:
         else:
             self.sub2api_sort_column=column
             self.sub2api_sort_descending=False
-        labels={'id':'ID','email':'账号名称','groups':'分组','status':'状态','quota5':'5h已用','quota7':'7d已用','error':'错误摘要'}
+        labels={'id':'ID','email':'账号名称','groups':'分组','status':'状态','scheduling':'调度','quota5':'5h已用','quota7':'7d已用','error':'错误摘要'}
         for key,label in labels.items():
             arrow=(' ↓' if self.sub2api_sort_descending else ' ↑') if key==column else ''
             self.sub2api_tree.heading(key,text=label+arrow)

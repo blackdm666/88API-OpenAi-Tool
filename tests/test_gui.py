@@ -42,12 +42,18 @@ class LayoutTest(unittest.TestCase):
                             "group_ids": [2],
                             "group_names": ["GPT PLUS"],
                             "status": "active",
+                            "schedulable": i % 2 == 0,
                         }
                         for i in range(16)
                     ]
                     app.populate_sub2api_tree()
                     root.update_idletasks()
                     self.assertEqual(len(app.sub2api_tree.get_children()), 16)
+                    self.assertEqual(app.sub2api_tree.set(app.sub2api_tree.get_children()[0], 'scheduling'), '参与调度')
+                    self.assertEqual(app.sub2api_tree.set(app.sub2api_tree.get_children()[1], 'scheduling'), '已关闭')
+                    root.tk.call(app.sub2api_tree.heading('scheduling','command'))
+                    self.assertEqual(app.sub2api_sort_column, 'scheduling')
+                    root.tk.call(app.sub2api_tree.heading('id','command'))
                     self.assertNotIn('CPA', [app.right_notebook.tab(tab, 'text') for tab in app.right_notebook.tabs()])
                     app.sub2api_group_filters = {'GPT PLUS', 'GPT PRO'}
                     self.assertEqual(app.sub2api_type_filter_var.get(),'oauth')
