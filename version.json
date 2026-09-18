@@ -1,6 +1,6 @@
 {
   "name": "OpenAI Token Manager",
-  "version": "2.2.0-88api.21",
+  "version": "2.2.0-88api.22",
   "description": "本地OpenAI账号与Sub2API远端管理工具",
   "author": "Based on Reverse Engineering",
   "license": "Personal Use Only",
@@ -197,6 +197,12 @@
       "changes": [
         "左侧本地操作统一命名为重新读取账号和刷新本地令牌",
         "右侧 Sub2API 保留刷新列表命名以区分本地读取"
+      ]
+    },
+    "2.2.0-88api.22": {
+      "date": "2026-09-18",
+      "changes": [
+        "左侧账号操作改为三列三行九宫格布局"
       ]
     }
   }
