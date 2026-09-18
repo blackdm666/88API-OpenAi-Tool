@@ -72,8 +72,8 @@ class GUILayoutMixin:
         action_frame.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         for column in range(3):
             action_frame.columnconfigure(column, weight=1)
-        ttk.Button(action_frame, text="刷新列表", command=self.reload_tokens, style="Primary.TButton").grid(row=0, column=0, sticky="ew", padx=3, pady=3)
-        ttk.Button(action_frame, text="刷新选中", command=self.refresh_selected).grid(row=0, column=1, sticky="ew", padx=3, pady=3)
+        ttk.Button(action_frame, text="重新读取账号", command=self.reload_tokens, style="Primary.TButton").grid(row=0, column=0, sticky="ew", padx=3, pady=3)
+        ttk.Button(action_frame, text="刷新本地令牌", command=self.refresh_selected).grid(row=0, column=1, sticky="ew", padx=3, pady=3)
         ttk.Button(action_frame, text="同步标签", command=self.sync_selected_labels).grid(row=0, column=2, sticky="ew", padx=3, pady=3)
         ttk.Button(action_frame, text="删除账号", command=self.delete_selected).grid(row=1, column=0, sticky="ew", padx=3, pady=3)
         self.auto_refresh_button = ttk.Button(action_frame, text="启动自动维护", command=self.toggle_auto_refresh)
