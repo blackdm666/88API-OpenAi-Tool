@@ -13,6 +13,7 @@ from typing import Any
 import requests
 
 from .converters import to_cpa_payload, to_sub2api_payload
+from .sub2api_policy import normalize_server_url, upload_options, match_remote, redact_error
 from .utils import build_requests_proxies, now_rfc3339, now_ts, safe_int
 
 
@@ -76,10 +77,7 @@ _sub2api_auth_lock = threading.Lock()
 
 
 def _sub2api_api_url(settings: dict[str, Any]) -> str:
-    api_url = str(_sub2api_settings(settings).get("api_url") or "").strip()
-    if not api_url:
-        raise RuntimeError("Sub2API API URL 未配置")
-    return api_url.rstrip("/")
+    return normalize_server_url(_sub2api_settings(settings).get("api_url", ""))
 
 
 def _sub2api_api_key(settings: dict[str, Any]) -> str:
@@ -118,8 +116,10 @@ def _sub2api_base_headers(settings: dict[str, Any], *, token: str = "") -> dict[
     if auth_token:
         headers["Authorization"] = f"Bearer {auth_token}"
     elif api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-        headers["x-api-key"] = api_key
+        if api_key.startswith('admin-'):
+            headers["x-api-key"] = api_key
+        else:
+            headers["Authorization"] = f"Bearer {api_key}"
     return headers
 
 
@@ -185,6 +185,8 @@ def login_sub2api_admin(settings: dict[str, Any], *, proxy_url: str = "") -> dic
     password = _sub2api_admin_password(settings)
     if not email or not password:
         raise RuntimeError("Sub2API 管理邮箱或密码未配置")
+    if '@' not in email or email.startswith('admin-'):
+        raise ValueError('请填写完整的管理员邮箱；管理 API Key 请填到 API Key 栏并选择该鉴权方式')
     response = requests.post(
         f"{_sub2api_api_url(settings)}/api/v1/auth/login",
         headers={
@@ -193,7 +195,7 @@ def login_sub2api_admin(settings: dict[str, Any], *, proxy_url: str = "") -> dic
         },
         json={"email": email, "password": password},
         timeout=30,
-        verify=False,
+        verify=True,
         proxies=build_requests_proxies(proxy_url),
     )
     if response.status_code != 200:
@@ -217,7 +219,7 @@ def refresh_sub2api_admin_session(settings: dict[str, Any], *, proxy_url: str = 
         },
         json={"refresh_token": refresh_token},
         timeout=30,
-        verify=False,
+        verify=True,
         proxies=build_requests_proxies(proxy_url),
     )
     if response.status_code != 200:
@@ -230,6 +232,11 @@ def refresh_sub2api_admin_session(settings: dict[str, Any], *, proxy_url: str = 
 
 
 def _ensure_sub2api_auth(settings: dict[str, Any], *, proxy_url: str = "") -> str:
+    mode = _sub2api_settings(settings).get('auth_mode', 'auto')
+    if mode == 'api_key' or (mode == 'auto' and _sub2api_api_key(settings)):
+        if not _sub2api_api_key(settings):
+            raise ValueError('请填写 Sub2API 管理 API Key')
+        return ''
     with _sub2api_auth_lock:
         access_token = _sub2api_access_token(settings)
         if access_token and not _sub2api_is_session_expired(settings):
@@ -243,7 +250,9 @@ def _ensure_sub2api_auth(settings: dict[str, Any], *, proxy_url: str = "") -> st
         if _sub2api_admin_email(settings) and _sub2api_admin_password(settings):
             login_sub2api_admin(settings, proxy_url=proxy_url)
             return _sub2api_access_token(settings)
-        return ""
+        if mode == "password":
+            raise ValueError("请填写 Sub2API 管理邮箱和密码")
+        raise ValueError("请配置 Sub2API 管理 API Key 或邮箱密码")
 
 
 def _sub2api_request(
@@ -268,12 +277,15 @@ def _sub2api_request(
         f"{api_url}{path}",
         headers=headers,
         timeout=30,
-        verify=False,
+        verify=True,
         proxies=build_requests_proxies(proxy_url),
         **kwargs,
     )
     if response.status_code != 401 or not require_auth:
         return response
+    mode = _sub2api_settings(settings).get('auth_mode', 'auto')
+    if mode == 'api_key' or (mode == 'auto' and _sub2api_api_key(settings)):
+        return response  # Never fall back to an unrelated saved login.
 
     refreshed = False
     if _sub2api_refresh_token(settings):
@@ -298,7 +310,7 @@ def _sub2api_request(
         f"{api_url}{path}",
         headers=retry_headers,
         timeout=30,
-        verify=False,
+        verify=True,
         proxies=build_requests_proxies(proxy_url),
         **kwargs,
     )
@@ -354,7 +366,7 @@ def fetch_sub2api_accounts(
             raise RuntimeError(_response_error(response))
         data = _sub2api_response_data(response)
         items = data.get("items") if isinstance(data, dict) else []
-        pages = max(1, int(data.get("pages") or 1)) if isinstance(data, dict) else 1
+        pages = max(1, int(data.get("pages") or ((int(data.get('total') or 0) + page_size - 1) // page_size) or 1)) if isinstance(data, dict) else 1
         for item in items if isinstance(items, list) else []:
             if not isinstance(item, dict):
                 continue
@@ -399,6 +411,8 @@ def fetch_sub2api_accounts(
                     "group_names": group_names,
                     "concurrency": safe_int(item.get("concurrency")),
                     "priority": safe_int(item.get("priority")),
+                    "rate_multiplier": item.get('rate_multiplier', 1),
+                    "parent_account_id": item.get('parent_account_id'),
                     "schedulable": bool(item.get("schedulable", True)),
                     "proxy_id": item.get("proxy_id"),
                     "last_used_at": str(item.get("last_used_at") or "").strip(),
@@ -407,6 +421,7 @@ def fetch_sub2api_accounts(
                     "rate_limited_at": str(item.get("rate_limited_at") or "").strip(),
                     "rate_limit_reset_at": str(item.get("rate_limit_reset_at") or "").strip(),
                     "temp_unschedulable_until": str(item.get("temp_unschedulable_until") or "").strip(),
+                    "temp_unschedulable_reason": str(item.get('temp_unschedulable_reason') or ''),
                     "auto_pause_on_expired": bool(item.get("auto_pause_on_expired", False)),
                     "credentials": credentials,
                     "extra": extra,
@@ -738,8 +753,21 @@ def upload_to_cpa(record: dict[str, Any], settings: dict[str, Any], proxy_url: s
 
 def upload_to_sub2api(record: dict[str, Any], settings: dict[str, Any], proxy_url: str = "") -> tuple[bool, str]:
     try:
-        group_ids = _sub2api_settings(settings).get("group_ids")
-        payload = to_sub2api_payload(record, group_ids=group_ids)
+        config = _sub2api_settings(settings)
+        payload = sub2api_upload_payload(record, settings)
+        matches = fetch_sub2api_accounts(settings, proxy_url=proxy_url, filters={'platform': 'openai', 'search': record.get('email', '')})
+        existing = match_remote(record, matches)
+        if existing:
+            verified = apply_sub2api_credentials(record, existing, settings, proxy_url=proxy_url)
+            # Manual upload explicitly applies the user's saved upload options.
+            options = upload_options(config)
+            options['extra'] = {**(verified.get('extra') or {}), **options['extra']}
+            options['proxy_id'] = options['proxy_id'] or 0  # official update API uses 0 to detach
+            response = _sub2api_request(settings, 'PUT', f"/api/v1/admin/accounts/{existing['id']}", proxy_url=proxy_url, json=options)
+            if response.status_code != 200:
+                return False, '凭据已同步，但参数更新失败：' + redact_error(_response_error(response))
+            _sub2api_response_data(response)
+            return True, f"已更新远端账号 #{existing['id']}"
         response = _sub2api_request(
             settings,
             "POST",
@@ -751,8 +779,8 @@ def upload_to_sub2api(record: dict[str, Any], settings: dict[str, Any], proxy_ur
             },
             json=payload,
         )
-    except RuntimeError as exc:
-        return False, str(exc)
+    except (RuntimeError, ValueError, requests.RequestException) as exc:
+        return False, redact_error(exc)
     if response.status_code in (200, 201):
         try:
             _sub2api_response_data(response)
@@ -760,6 +788,58 @@ def upload_to_sub2api(record: dict[str, Any], settings: dict[str, Any], proxy_ur
             return False, str(exc)
         return True, "上传成功"
     return False, _response_error(response)
+
+
+def sub2api_upload_payload(record, settings):
+    options = upload_options(_sub2api_settings(settings))
+    payload = to_sub2api_payload(record, group_ids=options['group_ids'])
+    payload['extra'].update(options.pop('extra'))
+    payload.update(options)
+    return payload
+
+
+def get_sub2api_account(settings, account_id, *, proxy_url=''):
+    response = _sub2api_request(settings, 'GET', f'/api/v1/admin/accounts/{int(account_id)}', proxy_url=proxy_url)
+    if response.status_code != 200:
+        raise RuntimeError(redact_error(_response_error(response)))
+    data = _sub2api_response_data(response)
+    if not isinstance(data, dict):
+        raise RuntimeError('远端账号详情格式异常')
+    return data
+
+
+def apply_sub2api_credentials(local, remote, settings, *, proxy_url=''):
+    # Re-read just before updating: don't reactivate a manually paused account,
+    # overwrite a rotated refresh token, or write to a changed workspace.
+    current = get_sub2api_account(settings, remote['id'], proxy_url=proxy_url)
+    if not match_remote(local, [current]) or current.get('status') == 'inactive':
+        raise ValueError('账号身份或启用状态已变化，停止同步')
+    old_rt = (remote.get('credentials') or {}).get('refresh_token')
+    if old_rt and (current.get('credentials') or {}).get('refresh_token') != old_rt:
+        raise ValueError('远端凭据已被其他任务刷新，下一轮重新检查')
+    tokens = to_sub2api_payload(local)['credentials']
+    credentials = dict(current.get('credentials') or {})
+    # Optional token claims must not erase valid remote workspace metadata.
+    credentials.update({k: v for k, v in tokens.items() if v not in ('', None)})
+    response = _sub2api_request(settings, 'POST', f"/api/v1/admin/accounts/{remote['id']}/apply-oauth-credentials",
+                               proxy_url=proxy_url, json={'type': 'oauth', 'credentials': credentials})
+    if response.status_code != 200:
+        raise RuntimeError(redact_error(_response_error(response)))
+    _sub2api_response_data(response)
+    verified = get_sub2api_account(settings, remote['id'], proxy_url=proxy_url)
+    if verified.get('status') != 'active' or (verified.get('credentials') or {}).get('access_token') != local.get('access_token'):
+        raise RuntimeError('凭据已提交，但远端读回校验不通过')
+    return verified
+
+
+def fetch_sub2api_proxies(settings, *, proxy_url=''):
+    response = _sub2api_request(settings, 'GET', '/api/v1/admin/proxies/all', proxy_url=proxy_url)
+    if response.status_code != 200:
+        raise RuntimeError(redact_error(_response_error(response)))
+    data = _sub2api_response_data(response)
+    items = data if isinstance(data, list) else data.get('items', [])
+    # The selector needs names only, never proxy passwords.
+    return [{'id': p['id'], 'name': p.get('name', ''), 'status': p.get('status', '')} for p in items]
 
 
 def upload_state_patch(target: str, ok: bool, message: str) -> dict[str, Any]:

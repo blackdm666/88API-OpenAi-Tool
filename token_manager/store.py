@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import shutil
 import uuid
 from copy import deepcopy
@@ -9,7 +8,6 @@ from typing import Any
 
 from .utils import (
     atomic_write_json,
-    decode_jwt,
     derive_account_id,
     derive_email,
     derive_subscription,
@@ -180,9 +178,13 @@ class TokenStore:
             "expired": str(token_data.get("expired") or ""),
             "type": str(token_data.get("type") or "codex"),
         }
+        if not existing_filename and record.get('email'):
+            existing_filename = self._find_existing_path_by_email(record['email'])
         if existing_filename:
             old = safe_read_json(Path(existing_filename)) or {}
-            old.update(record)
+            # Keep monitoring enrollment and metadata when browser/manual OAuth
+            # returns to an already imported account.
+            old.update({key: value for key, value in record.items() if value not in ('', None)})
             record = old
         if metadata:
             merged_meta = dict(record.get("metadata") or {})

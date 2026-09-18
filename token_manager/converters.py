@@ -150,7 +150,8 @@ def to_sub2api_payload(record: dict[str, Any], group_ids: Any = None) -> dict[st
     cpa_payload = to_cpa_payload(record)
     access_token = str(cpa_payload.get("access_token") or "")
     refresh_token = str(cpa_payload.get("refresh_token") or "")
-    id_token = str(cpa_payload.get("id_token") or "")
+    # CPA's compatibility token is a parsing aid, not an OAuth credential.
+    id_token = str(record.get("id_token") or "")
     email = str(cpa_payload.get("email") or "")
     access_auth = get_auth_claims(decode_jwt(access_token))
     id_auth = get_auth_claims(decode_jwt(id_token))

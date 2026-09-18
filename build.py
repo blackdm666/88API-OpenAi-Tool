@@ -16,7 +16,7 @@ ICON_PNG = PROJECT_ROOT / "ico" / "openai.png"
 BUILD_ASSETS_DIR = PROJECT_ROOT / "build_assets"
 ICON_ICO = BUILD_ASSETS_DIR / "openai.ico"
 TK_RUNTIME_HOOK = BUILD_ASSETS_DIR / "runtime_hook_tk.py"
-SPEC_FILE = PROJECT_ROOT / "build.spec"
+SPEC_FILE = BUILD_ASSETS_DIR / "build.spec"
 DIST_DIR = PROJECT_ROOT / "dist"
 BUILD_DIR = PROJECT_ROOT / "build"
 DIST_RUNTIME_NAMES = {"tokens", "outputs", "token_manager_config.json"}
@@ -90,17 +90,17 @@ def ensure_icon(icon_png: Path, icon_ico: Path) -> Path:
 
 
 def locate_tk_assets() -> dict[str, Path]:
-    env_root = Path(sys.executable).resolve().parent
-    candidates = {
-        "tcl_dll": env_root / "Library" / "bin" / "tcl86t.dll",
-        "tk_dll": env_root / "Library" / "bin" / "tk86t.dll",
-        "tcl_lib": env_root / "Library" / "lib" / "tcl8.6",
-        "tk_lib": env_root / "Library" / "lib" / "tk8.6",
-    }
-    missing = [name for name, path in candidates.items() if not path.exists()]
-    if missing:
-        raise FileNotFoundError(f"未找到 Tk 运行时资源: {', '.join(missing)}")
-    return candidates
+    # Support both Conda and python.org installations, including venv builds.
+    for env_root in (Path(sys.base_prefix), Path(sys.executable).resolve().parent):
+        for dll_dir, lib_dir in ((env_root / 'DLLs', env_root / 'tcl'),
+                                 (env_root / 'Library' / 'bin', env_root / 'Library' / 'lib')):
+            candidates = {
+                'tcl_dll': dll_dir / 'tcl86t.dll', 'tk_dll': dll_dir / 'tk86t.dll',
+                'tcl_lib': lib_dir / 'tcl8.6', 'tk_lib': lib_dir / 'tk8.6',
+            }
+            if all(path.exists() for path in candidates.values()):
+                return candidates
+    raise FileNotFoundError('未找到 Tcl/Tk 8.6 运行时，请使用包含 Tk 的 Python 发行版')
 
 
 def locate_optional_runtime_dlls() -> list[Path]:
@@ -144,7 +144,7 @@ def render_spec(
 ) -> str:
     icon_literal = str(icon_path).replace("\\", "\\\\")
     data_png = str(icon_png).replace("\\", "\\\\")
-    entry_point_literal = str(entry_point).replace("\\", "\\\\")
+    entry_point_literal = str((PROJECT_ROOT / entry_point).resolve()).replace("\\", "\\\\")
     tcl_dll = str(tk_assets["tcl_dll"]).replace("\\", "\\\\")
     tk_dll = str(tk_assets["tk_dll"]).replace("\\", "\\\\")
     tcl_lib = str(tk_assets["tcl_lib"]).replace("\\", "\\\\")
@@ -158,7 +158,7 @@ def render_spec(
     return f"""# -*- mode: python ; coding: utf-8 -*-
 from pathlib import Path
 
-project_root = Path(SPECPATH)
+project_root = Path(r'{entry_point_literal}').parent
 icon_path = Path(r"{icon_literal}")
 
 a = Analysis(

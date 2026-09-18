@@ -1,6 +1,6 @@
 {
   "name": "OpenAI Token Manager",
-  "version": "2.1.0",
+  "version": "2.2.0-88api.1",
   "description": "个人多账号 OpenAI Token 管理工具 - 支持手动授权、自动授权、刷新、转换、上传和标签显示",
   "author": "Based on Reverse Engineering",
   "license": "Personal Use Only",
@@ -42,6 +42,15 @@
         "自动刷新功能",
         "后台维护模式",
         "支持打包成独立程序"
+      ]
+    },
+    "2.2.0-88api.1": {
+      "date": "2026-09-18",
+      "changes": [
+        "修复Sub2API列表可视空间与分页",
+        "上传参数配置与设备指纹收敛",
+        "手动启用账号监控、401恢复与原账号凭据同步",
+        "紧凑交互、日志折叠、鉴权方式选择与HTTPS地址校验"
       ]
     }
   }

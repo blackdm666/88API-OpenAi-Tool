@@ -6,7 +6,8 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
-from .converters import from_cpa_payload, from_sub2api_payload, to_cpa_payload, to_sub2api_payload
+from .integrations import sub2api_upload_payload
+from .converters import from_cpa_payload, from_sub2api_payload, to_cpa_payload
 from .services import export_organized_payloads, refresh_record, run_batch, sync_subscription, upload_record
 
 
@@ -44,6 +45,7 @@ class GUIRecordsMixin:
                     status,
                     record["_remaining_text"],
                     upload_summary,
+                    (record.get("sub2api_recovery") or {}).get("status", "未监控"),
                 ),
                 tags=tags,
             )
@@ -221,11 +223,10 @@ class GUIRecordsMixin:
 创建时间: {record.get('created_at', '')}
 文件: {record.get('_filename', '')}
 
-Access Token 前 60 位:
-{str(record.get('access_token') or '')[:60]}...
+凭据: Access Token {'已保存' if record.get('access_token') else '缺失'} / Refresh Token {'已保存' if record.get('refresh_token') else '缺失'}
 
-Refresh Token 前 60 位:
-{str(record.get('refresh_token') or '')[:60]}...
+自动恢复: {(record.get('sub2api_recovery') or {}).get('status', '未监控')}
+恢复说明: {(record.get('sub2api_recovery') or {}).get('message', '在左侧选择账号后点击“监控选中”')}
 
 上传状态:
 {chr(10).join(upload_lines) if upload_lines else '暂无'}
@@ -340,6 +341,9 @@ Sub2API 远端:
         self.upload_selected()
 
     def delete_selected(self) -> None:
+        if self.auto_refresh_running or self.is_running():
+            messagebox.showinfo('请先停止维护', '请先停止自动维护并等待当前任务结束')
+            return
         records = self.selected_records()
         if not records:
             messagebox.showerror("错误", "请先选择账号")
@@ -383,7 +387,7 @@ Sub2API 远端:
             payload = to_cpa_payload(record)
             export_target = "cpa"
         else:
-            payload = to_sub2api_payload(record, group_ids=self.sub2api_group_ids_var.get().strip())
+            payload = sub2api_upload_payload(record, self.current_settings())
             export_target = "sub2api"
         self.preview_text_value = json.dumps(payload, ensure_ascii=False, indent=2)
         self.preview_text.delete("1.0", tk.END)
@@ -434,6 +438,9 @@ Sub2API 远端:
         self._import_text(raw, self.import_source_var.get().strip())
 
     def _import_text(self, raw: str, source: str) -> None:
+        if self.auto_refresh_running or self.is_running():
+            messagebox.showinfo('请先停止维护', '请先停止自动维护并等待当前任务结束，再导入新凭据')
+            return
         try:
             data = json.loads(raw)
         except json.JSONDecodeError as exc:

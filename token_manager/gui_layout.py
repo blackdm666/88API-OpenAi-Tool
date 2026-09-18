@@ -16,6 +16,7 @@ class GUILayoutMixin:
         self._build_token_panel(left)
         self._build_right_panel(right)
         self._build_log_panel(bottom)
+        self.main_vertical_pane.forget(bottom)
         self.root.after(120, self._apply_initial_pane_layout)
 
     def _build_header(self, parent) -> None:
@@ -23,6 +24,9 @@ class GUILayoutMixin:
         header.pack(fill=tk.X, pady=(0, 10))
 
         ttk.Label(header, text="OpenAI Token Manager", style="Hero.TLabel").pack(side=tk.LEFT)
+        ttk.Button(header, text="专注远端 / 双栏", command=self.toggle_account_panel).pack(side=tk.RIGHT, padx=8)
+        ttk.Button(header, text="自动维护规则", command=self.show_maintenance_rules).pack(side=tk.RIGHT, padx=8)
+        ttk.Button(header, text="展开 / 收起日志", command=self.toggle_log_panel).pack(side=tk.RIGHT, padx=8)
         ttk.Label(header, textvariable=self.status_var, style="StatusChip.TLabel").pack(side=tk.RIGHT)
 
     def _build_main_panes(self, parent):
@@ -40,12 +44,14 @@ class GUILayoutMixin:
         self.main_horizontal_pane.grid(row=0, column=0, sticky="nsew")
 
         bottom = ttk.LabelFrame(self.main_vertical_pane, text="运行日志", padding=8, style="Card.TLabelframe")
-        bottom.configure(height=300)
+        bottom.configure(height=120)
+        self.log_panel = bottom
 
         left = ttk.LabelFrame(self.main_horizontal_pane, text="账号列表", padding=8, style="Card.TLabelframe")
         right = ttk.LabelFrame(self.main_horizontal_pane, text="功能区", padding=8, style="Card.TLabelframe")
-        self.main_horizontal_pane.add(left, weight=3)
-        self.main_horizontal_pane.add(right, weight=2)
+        self.account_panel = left
+        self.main_horizontal_pane.add(left, weight=1)
+        self.main_horizontal_pane.add(right, weight=3)
         self.main_vertical_pane.add(top_host, weight=5)
         self.main_vertical_pane.add(bottom, weight=2)
         return left, right, bottom
@@ -55,9 +61,10 @@ class GUILayoutMixin:
             self.root.update_idletasks()
             total_height = max(1, self.main_vertical_pane.winfo_height())
             total_width = max(1, self.main_horizontal_pane.winfo_width())
-            log_height = min(max(240, int(total_height * 0.3)), 360)
-            self.main_vertical_pane.sashpos(0, max(420, total_height - log_height))
-            self.main_horizontal_pane.sashpos(0, int(total_width * 0.56))
+            log_height = 100
+            if str(self.log_panel) in self.main_vertical_pane.panes():
+                self.main_vertical_pane.sashpos(0, max(420, total_height - log_height))
+            self.main_horizontal_pane.sashpos(0, min(430, int(total_width * 0.34)))
         except (AttributeError, tk.TclError):
             return
 
@@ -90,8 +97,9 @@ class GUILayoutMixin:
         ).grid(row=0, column=1, sticky="ew", padx=3, pady=3)
         ttk.Button(upload_frame, text="上传选中", command=self.upload_selected).grid(row=0, column=2, sticky="ew", padx=3, pady=3)
         ttk.Button(upload_frame, text="上传当前", command=self.upload_all).grid(row=0, column=3, sticky="ew", padx=3, pady=3)
-        ttk.Button(upload_frame, text="刷新 CPA", command=self.refresh_cpa_accounts).grid(row=0, column=4, sticky="ew", padx=3, pady=3)
-        ttk.Button(upload_frame, text="刷新 Sub2API", command=self.refresh_sub2api_accounts).grid(row=0, column=5, sticky="ew", padx=3, pady=3)
+        ttk.Button(upload_frame, text="上传配置", command=self.open_sub2api_upload_settings).grid(row=1, column=0, columnspan=2, sticky="ew", padx=3, pady=3)
+        ttk.Button(upload_frame, text="监控选中", command=lambda: self.set_recovery_selected(True)).grid(row=1, column=2, columnspan=2, sticky="ew", padx=3, pady=3)
+        ttk.Button(upload_frame, text="取消监控", command=lambda: self.set_recovery_selected(False)).grid(row=1, column=4, columnspan=2, sticky="ew", padx=3, pady=3)
 
         filter_frame = ttk.Frame(parent, style="Card.TFrame")
         filter_frame.grid(row=2, column=0, sticky="ew", pady=(0, 8))
@@ -139,14 +147,16 @@ class GUILayoutMixin:
         list_frame.columnconfigure(0, weight=1)
         list_frame.rowconfigure(0, weight=1)
 
-        columns = ("email", "plan", "status", "remaining", "upload")
+        columns = ("email", "plan", "status", "remaining", "upload", "recovery")
         self.token_tree = ttk.Treeview(list_frame, columns=columns, show="headings", selectmode="extended")
         self.token_tree.heading("email", text="邮箱")
         self.token_tree.heading("plan", text="标签")
         self.token_tree.heading("status", text="状态")
         self.token_tree.heading("remaining", text="剩余时间")
         self.token_tree.heading("upload", text="上传状态")
-        self.token_tree.column("email", width=280, stretch=True)
+        self.token_tree.heading("recovery", text="Sub2API监控")
+        self.token_tree.column("recovery", width=120, stretch=False)
+        self.token_tree.column("email", width=190, stretch=True)
         self.token_tree.column("plan", width=88, stretch=False, anchor=tk.CENTER)
         self.token_tree.column("status", width=96, stretch=False, anchor=tk.CENTER)
         self.token_tree.column("remaining", width=120, stretch=False, anchor=tk.CENTER)
@@ -188,6 +198,7 @@ class GUILayoutMixin:
         self._build_cpa_tab(self.cpa_tab)
         self._build_sub2api_tab(self.sub2api_tab)
         self._build_settings_tab(self.settings_tab)
+        self.right_notebook.select(self.sub2api_tab)
 
     def _build_detail_tab(self, parent) -> None:
         parent.columnconfigure(0, weight=1)
@@ -362,7 +373,7 @@ class GUILayoutMixin:
 
     def _build_cpa_pool_tab(self, parent) -> None:
         parent.columnconfigure(0, weight=1)
-        parent.rowconfigure(2, weight=1)
+        parent.rowconfigure(2, weight=1, minsize=200)
 
         actions = ttk.Frame(parent, style="Card.TFrame")
         actions.grid(row=0, column=0, sticky="ew", pady=(0, 8))
@@ -475,7 +486,7 @@ class GUILayoutMixin:
         top_bar.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         ttk.Button(top_bar, text="刷新远端列表", command=self.refresh_sub2api_accounts, style="Primary.TButton").pack(side=tk.LEFT)
         self.sub2api_stats_var = tk.StringVar(value="Sub2API 未加载")
-        ttk.Label(top_bar, textvariable=self.sub2api_stats_var, style="Stats.TLabel").pack(side=tk.RIGHT)
+        ttk.Label(top_bar, textvariable=self.sub2api_stats_var, style="Stats.TLabel", wraplength=410).pack(side=tk.RIGHT)
 
         notebook = ttk.Notebook(parent)
         notebook.grid(row=1, column=0, sticky="nsew")
@@ -490,14 +501,14 @@ class GUILayoutMixin:
 
     def _build_sub2api_pool_tab(self, parent) -> None:
         parent.columnconfigure(0, weight=1)
-        parent.rowconfigure(2, weight=1)
+        parent.rowconfigure(2, weight=1, minsize=200)
 
         actions = ttk.Frame(parent, style="Card.TFrame")
         actions.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         for column in range(5):
             actions.columnconfigure(column, weight=1)
         ttk.Button(actions, text="刷新选中令牌", command=self.refresh_selected_sub2api_remote, style="Primary.TButton").grid(row=0, column=0, sticky="ew", padx=3, pady=3)
-        ttk.Button(actions, text="刷新当前筛选", command=self.refresh_filtered_sub2api_remote).grid(row=0, column=1, sticky="ew", padx=3, pady=3)
+        ttk.Button(actions, text="上传配置", command=self.open_sub2api_upload_settings).grid(row=0, column=1, sticky="ew", padx=3, pady=3)
         ttk.Button(actions, text="删除选中", command=self.delete_selected_sub2api_records).grid(row=0, column=2, sticky="ew", padx=3, pady=3)
         ttk.Button(actions, text="停用选中", command=lambda: self.set_selected_sub2api_status("inactive")).grid(row=0, column=3, sticky="ew", padx=3, pady=3)
         ttk.Button(actions, text="启用选中", command=lambda: self.set_selected_sub2api_status("active")).grid(row=0, column=4, sticky="ew", padx=3, pady=3)
@@ -530,7 +541,7 @@ class GUILayoutMixin:
         center.grid(row=2, column=0, sticky="nsew")
         center.columnconfigure(0, weight=1)
         center.rowconfigure(0, weight=1)
-        self.sub2api_tree = ttk.Treeview(center, columns=("email", "groups", "status", "type", "flags", "expires_at", "last_used", "error"), show="headings", selectmode="extended")
+        self.sub2api_tree = ttk.Treeview(center, columns=("email", "groups", "status", "type", "flags", "expires_at", "last_used", "error"), displaycolumns=("email", "groups", "status", "error"), show="headings", height=10, selectmode="extended")
         self.sub2api_tree.heading("email", text="邮箱")
         self.sub2api_tree.heading("groups", text="分组")
         self.sub2api_tree.heading("status", text="状态")
@@ -558,8 +569,9 @@ class GUILayoutMixin:
         self.sub2api_tree.tag_configure("invalidated", foreground="#a94438")
         self.sub2api_tree.tag_configure("warning", foreground=self.palette["accent"])
 
-        self.sub2api_detail_text = tk.Text(parent, wrap=tk.WORD, height=4, font=("Consolas", 9), bg=self.palette["card"], fg=self.palette["text"], relief="flat", insertbackground=self.palette["text"], highlightthickness=1, highlightbackground=self.palette["border"], padx=10, pady=10)
+        self.sub2api_detail_text = tk.Text(parent, wrap=tk.WORD, height=2, font=("Consolas", 9), bg=self.palette["card"], fg=self.palette["text"], relief="flat", insertbackground=self.palette["text"], highlightthickness=1, highlightbackground=self.palette["border"], padx=10, pady=10)
         self.sub2api_detail_text.grid(row=3, column=0, sticky="ew", pady=(8, 0))
+        ttk.Button(parent, text="展开 / 收起账号详情", command=lambda: self.sub2api_detail_text.configure(height=8 if int(self.sub2api_detail_text.cget("height")) == 2 else 2)).grid(row=4, column=0, sticky="e", pady=3)
         self.sub2api_detail_text.config(state=tk.DISABLED)
 
     def _build_sub2api_invalidated_tab(self, parent) -> None:
@@ -650,10 +662,14 @@ class GUILayoutMixin:
         sub2api_frame = ttk.LabelFrame(sub2api_tab, text="Sub2API 配置", padding=10, style="Card.TLabelframe")
         sub2api_frame.pack(fill=tk.BOTH, expand=True)
         self._add_labeled_entry(sub2api_frame, "Sub2API URL", self.sub2api_url_var)
-        self._add_labeled_entry(sub2api_frame, "管理 Token/API Key", self.sub2api_key_var)
+        self._add_labeled_entry(sub2api_frame, "管理 Token/API Key", self.sub2api_key_var, show="•")
+        auth = ttk.Combobox(sub2api_frame, textvariable=self.sub2api_auth_mode_var, values=["auto", "api_key", "password"], state="readonly")
+        auth.pack(fill=tk.X, pady=6)
         self._add_labeled_entry(sub2api_frame, "Group IDs", self.sub2api_group_ids_var)
         self._add_labeled_entry(sub2api_frame, "管理邮箱", self.sub2api_admin_email_var)
         self._add_labeled_entry(sub2api_frame, "管理密码", self.sub2api_admin_password_var, show="*")
+        ttk.Button(sub2api_frame, text="连接 / 上传参数 / 分组与代理", command=self.open_sub2api_upload_settings, style="Primary.TButton").pack(fill=tk.X, pady=12)
+        ttk.Button(sub2api_frame, text="保存设置", command=self.save_settings).pack(anchor=tk.E)
 
     def _build_log_panel(self, parent) -> None:
         log_toolbar = ttk.Frame(parent, style="Card.TFrame")
@@ -662,7 +678,7 @@ class GUILayoutMixin:
         ttk.Button(log_toolbar, text="清空日志", command=self.clear_logs).pack(side=tk.RIGHT)
         self.log_text = scrolledtext.ScrolledText(
             parent,
-            height=12,
+            height=3,
             wrap=tk.WORD,
             font=("Consolas", 9),
             bg=self.palette["card"],
@@ -673,3 +689,18 @@ class GUILayoutMixin:
             highlightbackground=self.palette["border"],
         )
         self.log_text.pack(fill=tk.BOTH, expand=True)
+
+    def toggle_log_panel(self):
+        panes = self.main_vertical_pane.panes()
+        if str(self.log_panel) in panes:
+            self.main_vertical_pane.forget(self.log_panel)
+        else:
+            self.main_vertical_pane.add(self.log_panel, weight=0)
+            self.root.after_idle(self._apply_initial_pane_layout)
+
+    def toggle_account_panel(self):
+        if str(self.account_panel) in self.main_horizontal_pane.panes():
+            self.main_horizontal_pane.forget(self.account_panel)
+        else:
+            self.main_horizontal_pane.insert(0, self.account_panel, weight=1)
+            self.root.after_idle(self._apply_initial_pane_layout)

@@ -23,6 +23,7 @@ from .integrations import (
     upload_state_patch,
     upload_to_cpa,
     upload_to_sub2api,
+    sub2api_upload_payload,
 )
 from .store import TokenStore
 from .utils import (
@@ -150,9 +151,16 @@ def refresh_record(
         return False, "Refresh Token 不存在"
     if callable(log_fn):
         log_fn(f"开始刷新 {email}")
-    token_data = refresh_oauth_token(refresh_token, settings, proxy_url=proxy_url)
+    token_settings = deepcopy(settings)
+    if record.get('client_id'):
+        token_settings.setdefault('oauth', {})['client_id'] = record['client_id']
+    token_data = refresh_oauth_token(refresh_token, token_settings, proxy_url=proxy_url)
+    if token_data.get('email') and record.get('email') and token_data['email'].strip().lower() != str(record['email']).strip().lower():
+        raise ValueError('刷新结果邮箱与原账号不一致，停止覆盖本地账号')
+    if token_data.get('account_id') and record.get('account_id') and token_data['account_id'] != record['account_id']:
+        raise ValueError('刷新结果工作区与原账号不一致，停止覆盖本地账号')
     existing = deepcopy(record)
-    existing.update(token_data)
+    existing.update({k: v for k, v in token_data.items() if v not in ("", None)})
     existing.setdefault("subscription", {})
     if sync_plan:
         try:
@@ -401,7 +409,7 @@ def upload_record(
     if normalized_target == "cpa":
         export_path = store.export_payload(email, normalized_target, to_cpa_payload(record))
     elif normalized_target == "sub2api":
-        export_path = store.export_payload(email, normalized_target, to_sub2api_payload(record, group_ids=((settings.get("integrations") or {}).get("sub2api") or {}).get("group_ids")))
+        export_path = store.export_payload(email, normalized_target, sub2api_upload_payload(record, settings))
     else:
         export_path = None
     if callable(log_fn) and export_path is not None:
@@ -424,8 +432,7 @@ def export_record_payloads(
 ) -> dict[str, str]:
     email = str(record.get("email") or "").strip()
     cpa_path = store.export_payload(email, "CPA", to_cpa_payload(record))
-    sub2api_group_ids = ((settings.get("integrations") or {}).get("sub2api") or {}).get("group_ids")
-    sub2api_path = store.export_payload(email, "Sub2API", to_sub2api_payload(record, group_ids=sub2api_group_ids))
+    sub2api_path = store.export_payload(email, "Sub2API", sub2api_upload_payload(record, settings))
     if callable(log_fn):
         log_fn(f"已整理导出 {email}")
     return {"CPA": str(cpa_path), "Sub2API": str(sub2api_path)}
@@ -447,8 +454,8 @@ def _sub2api_export_token_version(record: dict[str, Any]) -> int:
     return now_ts() * 1000
 
 
-def _sub2api_export_account(record: dict[str, Any], *, group_ids: Any = None) -> dict[str, Any]:
-    base = to_sub2api_payload(record, group_ids=group_ids)
+def _sub2api_export_account(record: dict[str, Any], *, group_ids: Any = None, settings=None) -> dict[str, Any]:
+    base = sub2api_upload_payload(record, settings) if settings else to_sub2api_payload(record, group_ids=group_ids)
     credentials = dict(base.get("credentials") or {})
     email = str(((base.get("extra") or {}).get("email") or base.get("name") or record.get("email") or "")).strip()
     expires_in = int(record.get("_remaining_seconds") or remaining_seconds(str(record.get("expired") or "")) or 0)
@@ -468,10 +475,12 @@ def _sub2api_export_account(record: dict[str, Any], *, group_ids: Any = None) ->
             "organization_id": str(credentials.get("organization_id") or ""),
             "refresh_token": str(credentials.get("refresh_token") or ""),
         },
-        "extra": {"email": email},
-        "concurrency": int(base.get("concurrency") or 10),
-        "priority": int(base.get("priority") or 1),
-        "rate_multiplier": 1,
+        "extra": base["extra"],
+        "group_ids": base["group_ids"],
+        "proxy_id": base.get("proxy_id"),
+        "concurrency": int(base.get("concurrency", 10)),
+        "priority": int(base.get("priority", 1)),
+        "rate_multiplier": base.get("rate_multiplier", 1),
         "auto_pause_on_expired": bool(base.get("auto_pause_on_expired", True)),
     }
 
@@ -490,7 +499,7 @@ def export_organized_payloads(
     for record in records:
         email = str(record.get("email") or "").strip()
         cpa_paths.append(str(store.export_payload(email, "CPA", to_cpa_payload(record))))
-        sub2api_accounts.append(_sub2api_export_account(record, group_ids=group_ids))
+        sub2api_accounts.append(_sub2api_export_account(record, group_ids=group_ids, settings=settings))
         if callable(log_fn):
             log_fn(f"已整理导出 {email}")
     timestamp = time.strftime("%Y%m%d_%H%M%S", time.localtime())

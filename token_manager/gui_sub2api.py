@@ -15,6 +15,11 @@ from .services import (
 
 
 class GUISub2APIMixin:
+    def update_recovery_snapshot(self, records):
+        self.sub2api_records = records
+        self.sub2api_index = self._build_sub2api_email_index(records)
+        self.populate_sub2api_tree()
+
     def _sub2api_error_summary(self, record: dict[str, Any], max_len: int = 96) -> str:
         raw = str(record.get("error_message") or "").strip().replace("\r", " ").replace("\n", " ")
         text = " ".join(raw.split())
@@ -165,6 +170,7 @@ class GUISub2APIMixin:
             f"当前 {len(self.filtered_sub2api_records)}  Active {active_count}  Inactive {inactive_count}  Error {error_count}  停调度 {unschedulable_count}"
         )
         self.sub2api_invalidated_stats_var.set(f"失效记录 {len(self.invalidated_sub2api_records)}")
+        self.sub2api_tree.xview_moveto(0)
         self.on_sub2api_selection_changed()
         self.on_sub2api_invalidated_selection_changed()
 

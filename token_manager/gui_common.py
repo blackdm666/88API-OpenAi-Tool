@@ -17,23 +17,24 @@ from .constants import (
     MAX_UPLOAD_WORKERS,
 )
 from .store import TokenStore
+from .sub2api_policy import redact_error
 
 
 class GUICommonMixin:
     def _configure_styles(self) -> None:
         self.palette = {
-            "bg": "#edf3f5",
-            "card": "#fbfdfe",
+            "bg": "#f1f5f9",
+            "card": "#ffffff",
             "card_alt": "#f3f7f9",
             "border": "#d7e1e7",
             "text": "#203039",
             "muted": "#647681",
-            "primary": "#0f766e",
-            "primary_hover": "#115e59",
+            "primary": "#2563eb",
+            "primary_hover": "#1d4ed8",
             "primary_soft": "#d9f0ec",
             "accent": "#c47a22",
-            "accent_soft": "#f9ead7",
-            "status_bg": "#e1f0ec",
+            "accent_soft": "#e8efff",
+            "status_bg": "#e8efff",
         }
         style = ttk.Style()
         try:
@@ -97,7 +98,7 @@ class GUICommonMixin:
         )
         style.configure(
             "TButton",
-            padding=(11, 8),
+            padding=(9, 5),
             background=self.palette["card_alt"],
             foreground=self.palette["text"],
             bordercolor=self.palette["border"],
@@ -111,7 +112,7 @@ class GUICommonMixin:
         )
         style.configure(
             "Primary.TButton",
-            padding=(11, 8),
+            padding=(9, 5),
             font=bold_font,
             background=self.palette["primary"],
             foreground="#ffffff",
@@ -147,7 +148,7 @@ class GUICommonMixin:
         style.map("TCombobox", fieldbackground=[("readonly", self.palette["card"])], selectbackground=[("readonly", self.palette["card"])])
         style.configure(
             "Treeview",
-            rowheight=32,
+            rowheight=29,
             font=base_font,
             background=self.palette["card"],
             fieldbackground=self.palette["card"],
@@ -202,7 +203,7 @@ class GUICommonMixin:
         ttk.Spinbox(frame, from_=min_value, to=max_value, textvariable=variable, width=10).pack(side=tk.LEFT)
 
     def log(self, message: str, level: str = "info") -> None:
-        self.log_bus.write(level, message)
+        self.log_bus.write(level, redact_error(message))
 
     def poll_logs(self) -> None:
         for event in self.log_bus.drain():
@@ -221,7 +222,8 @@ class GUICommonMixin:
             except (ValueError, TypeError):
                 return default
 
-        config = dict(self.config)
+        from copy import deepcopy
+        config = deepcopy(self.config)
         integrations = dict(config.get("integrations") or {})
         sub2api_existing = dict(integrations.get("sub2api") or {})
         config["tokens_dir"] = self.tokens_dir_var.get().strip()
@@ -252,6 +254,8 @@ class GUICommonMixin:
                 "container_name": self.cpa_container_var.get().strip() or "cli-proxy-api",
             },
             "sub2api": {
+                **sub2api_existing,
+                "auth_mode": self.sub2api_auth_mode_var.get(),
                 "api_url": self.sub2api_url_var.get().strip(),
                 "api_key": self.sub2api_key_var.get().strip(),
                 "group_ids": self.sub2api_group_ids_var.get().strip(),
@@ -262,6 +266,10 @@ class GUICommonMixin:
                 "token_expires_at": int(sub2api_existing.get("token_expires_at") or 0),
             },
         }
+        sub2api_current = config['integrations']['sub2api']
+        if any(str(sub2api_current.get(key, '')) != str(sub2api_existing.get(key, ''))
+               for key in ('api_url', 'admin_email', 'admin_password', 'auth_mode')):
+            sub2api_current.update(access_token='', refresh_token='', token_expires_at=0)
         return config
 
     def save_settings(self, reload_tokens: bool = True, notify: bool = True) -> None:
@@ -323,7 +331,7 @@ class GUICommonMixin:
 
     def run_background(self, status: str, worker, on_done):
         with self._running_job_lock:
-            if self.running_job:
+            if self.running_job or self.auto_refresh_running:
                 messagebox.showinfo("提示", "已有任务在运行")
                 return
             self.running_job = True

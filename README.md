@@ -6,7 +6,7 @@
   <p>一个面向多账号运维场景的 OpenAI Token 管理工具</p>
 
   <p>
-    <img src="https://img.shields.io/badge/version-2.1.0-0f766e?style=for-the-badge" alt="version">
+    <img src="https://img.shields.io/badge/version-2.2.0--88api.1-2563eb?style=for-the-badge" alt="version">
     <img src="https://img.shields.io/badge/python-3.11+-1f6feb?style=for-the-badge" alt="python">
     <img src="https://img.shields.io/badge/gui-tkinter-c47a22?style=for-the-badge" alt="gui">
     <img src="https://img.shields.io/badge/auth-protocol%20%7C%20browser-111827?style=for-the-badge" alt="auth">
@@ -30,6 +30,8 @@
 > 它把本地账号池、批量刷新、手动授权、2FA 批量授权、CPA 远端管理、Sub2API 远端管理、格式互转、导出整理和日志追踪放到了一套 GUI 里。
 
 ## 预览
+
+本 fork 的 Sub2API 列表、上传参数、设备指纹与账号自动恢复说明见 [优化版使用说明](优化版使用说明.md)。自动恢复默认只处理手动开启监控的本地账号，永久撤销的授权需要重新登录。
 
 <table>
   <tr>

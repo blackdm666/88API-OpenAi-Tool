@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import threading
-import time
 from pathlib import Path
+from copy import deepcopy
+from .maintenance import recovery_cycle
 
 from tkinter import filedialog, messagebox
 
@@ -10,7 +11,7 @@ from tools.auth_2fa_browser import run_authorize_batch_lines_browser
 from tools.auth_2fa_live import parse_account_lines, run_authorize_batch_lines
 from .constants import DEFAULT_AUTH_TIMEOUT_SECONDS
 from .oauth import browser_assisted_authorize, exchange_callback, generate_oauth_start
-from .services import refresh_record, run_batch
+from .services import refresh_record
 
 
 class GUIAuthMixin:
@@ -159,6 +160,9 @@ class GUIAuthMixin:
         self.log("已生成手动授权 URL")
 
     def submit_callback(self) -> None:
+        if self.auto_refresh_running or self.is_running():
+            messagebox.showinfo('请先停止维护', '为避免同时刷新同一个账号，请停止自动维护并等待当前任务完成后再授权。')
+            return
         if not self.manual_oauth_start:
             messagebox.showerror("错误", "请先生成授权 URL")
             return
@@ -214,46 +218,54 @@ class GUIAuthMixin:
 
     def toggle_auto_refresh(self) -> None:
         if self.auto_refresh_running:
-            self.auto_refresh_running = False
-            self.auto_refresh_button.config(text="启动自动维护")
-            self.status_var.set("自动维护已停止")
-            self.log("自动维护已停止")
+            self.maintenance_stop.set()
+            self.auto_refresh_button.config(text="正在停止…", state="disabled")
+            self.log("停止请求已提交，当前网络请求返回后退出")
+            return
+        if self.auto_refresh_thread and self.auto_refresh_thread.is_alive():
+            return
+        if self.is_running():
+            messagebox.showinfo("请稍候", "请等待当前任务结束")
             return
         self.save_settings(reload_tokens=False, notify=False)
+        self.maintenance_stop.clear()
         self.auto_refresh_running = True
         self.auto_refresh_button.config(text="停止自动维护")
-        self.log("自动维护已启动")
+        self.log("自动维护已启动：本地到期检查 + 已开启账号的Sub2API恢复")
         self.auto_refresh_thread = threading.Thread(target=self.auto_refresh_worker, daemon=True)
         self.auto_refresh_thread.start()
 
     def auto_refresh_worker(self) -> None:
-        while self.auto_refresh_running:
-            settings = None
-            try:
+        try:
+            while not self.maintenance_stop.is_set():
                 with self._state_lock:
-                    settings = dict(self.config)
-                    store_snapshot = self.store
-                if self.is_running():
-                    time.sleep(2)
-                    continue
-                threshold = int(settings.get("auto_refresh_threshold_seconds") or 300)
-                records = [record for record in store_snapshot.load_all() if 0 < record["_remaining_seconds"] <= threshold and record.get("refresh_token")]
-                if records:
-                    self.log(f"自动维护命中 {len(records)} 个账号，开始刷新")
-                    proxy = settings.get("http_proxy", "")
-                    workers = min(len(records), int(settings.get("refresh_workers") or 1))
-                    result = run_batch(
-                        records,
-                        workers=workers,
-                        job=lambda record: refresh_record(store_snapshot, record, settings, proxy_url=proxy, log_fn=self.log),
-                        progress_cb=self.with_progress("自动维护"),
-                    )
-                    self.log(f"自动维护完成 成功={result['success_count']} 失败={result['fail_count']}")
+                    settings = deepcopy(self.config)
+                    store = self.store
+                try:
+                    all_records = store.load_all()
+                    threshold = int(settings.get("auto_refresh_threshold_seconds") or 300)
+                    # Monitored accounts are handled by one recovery loop. Never
+                    # rotate their refresh tokens concurrently with local expiry.
+                    records = [r for r in all_records if not (r.get("sub2api_recovery") or {}).get("enabled")
+                               and 0 < r["_remaining_seconds"] <= threshold and r.get("refresh_token")]
+                    for record in records:
+                        if self.maintenance_stop.is_set():
+                            break
+                        try:
+                            refresh_record(store, record, settings, proxy_url=settings.get("http_proxy", ""), log_fn=self.log)
+                        except Exception as exc:
+                            self.log(f"本地到期刷新失败：{exc}", "error")
+                    if not self.maintenance_stop.is_set() and any((r.get("sub2api_recovery") or {}).get("enabled") for r in all_records):
+                        result = recovery_cycle(store, settings, log_fn=self.log, cancelled=self.maintenance_stop.is_set)
+                        self.log(f"远端检查 {result['checked']}，恢复 {result['recovered']}，需关注 {result['blocked']}")
+                        self.root.after(0, lambda snapshot=result['records']: self.update_recovery_snapshot(snapshot))
                     self.root.after(0, lambda: self.reload_tokens(save_first=False))
-            except Exception as exc:
-                self.log(f"自动维护异常: {exc}", "error")
-            sleep_seconds = int((settings or {}).get("auto_refresh_interval_seconds") or 60)
-            for _ in range(max(1, sleep_seconds)):
-                if not self.auto_refresh_running:
-                    break
-                time.sleep(1)
+                except Exception as exc:
+                    self.log(f"自动维护异常: {exc}", "error")
+                self.maintenance_stop.wait(max(30, int(settings.get("auto_refresh_interval_seconds") or 60)))
+        finally:
+            def stopped():
+                self.auto_refresh_running = False
+                self.auto_refresh_button.config(text="启动自动维护", state="normal")
+                self.status_var.set("自动维护已停止")
+            self.root.after(0, stopped)

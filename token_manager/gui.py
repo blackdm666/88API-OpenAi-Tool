@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import sys
 import threading
-from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +16,7 @@ from .gui_cpa import GUICPAMixin
 from .gui_layout import GUILayoutMixin
 from .gui_records import GUIRecordsMixin
 from .gui_sub2api import GUISub2APIMixin
+from .gui_sub2api_settings import GUISub2APISettingsMixin
 from .log_bus import LogBus
 from .store import TokenStore
 
@@ -59,18 +59,19 @@ def _apply_window_icon(root: tk.Tk) -> None:
 
 
 def _apply_window_geometry(root: tk.Tk) -> None:
-    screen_width = max(1280, int(root.winfo_screenwidth()))
-    screen_height = max(800, int(root.winfo_screenheight()))
+    screen_width = int(root.winfo_screenwidth())
+    screen_height = int(root.winfo_screenheight())
     width = min(max(1280, int(screen_width * 0.9)), screen_width - 48)
     height = min(max(820, int(screen_height * 0.88)), screen_height - 72)
     pos_x = max(0, (screen_width - width) // 2)
     pos_y = max(0, (screen_height - height) // 2)
     root.geometry(f"{width}x{height}+{pos_x}+{pos_y}")
-    root.minsize(1220, 780)
+    root.minsize(min(1100, screen_width - 48), min(660, screen_height - 72))
 
 
 class TokenManagerGUI(
     GUILayoutMixin,
+    GUISub2APISettingsMixin,
     GUICPAMixin,
     GUISub2APIMixin,
     GUIRecordsMixin,
@@ -104,6 +105,7 @@ class TokenManagerGUI(
         self.running_job = False
         self._running_job_lock = threading.Lock()
         self.auto_refresh_running = False
+        self.maintenance_stop = threading.Event()
         self.auto_refresh_thread: threading.Thread | None = None
         self.preview_text_value = ""
 
@@ -147,6 +149,7 @@ class TokenManagerGUI(
         self.cpa_url_var = tk.StringVar(value=str(cpa.get("api_url") or ""))
         self.cpa_key_var = tk.StringVar(value=str(cpa.get("api_key") or ""))
         self.cpa_container_var = tk.StringVar(value=str(cpa.get("container_name") or "cli-proxy-api"))
+        self.sub2api_auth_mode_var = tk.StringVar(value=str(sub2api.get("auth_mode") or "auto"))
         self.sub2api_url_var = tk.StringVar(value=str(sub2api.get("api_url") or ""))
         self.sub2api_key_var = tk.StringVar(value=str(sub2api.get("api_key") or ""))
         self.sub2api_group_ids_var = tk.StringVar(value=str(sub2api.get("group_ids") or "2"))
@@ -168,6 +171,19 @@ class TokenManagerGUI(
         self.reload_tokens()
         self.poll_logs()
         self.update_ui_timer()
+        self.root.protocol('WM_DELETE_WINDOW', self.request_close)
+
+    def request_close(self):
+        from tkinter import messagebox
+        if self.auto_refresh_running:
+            self.maintenance_stop.set()
+            self.status_var.set('正在安全停止维护，网络请求返回后关闭…')
+            self.root.after(200, self.request_close)
+            return
+        if self.is_running():
+            messagebox.showinfo('任务进行中', '请等待当前任务完成后关闭，避免中断凭据写入。')
+            return
+        self.root.destroy()
 
 
 def run_app() -> None:
