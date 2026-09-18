@@ -8,7 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageChops, ImageFilter
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -67,6 +67,30 @@ def png_to_ico(png_path: Path, ico_path: Path) -> Path:
         rgba = image.convert("RGBA")
         background = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
         flattened = Image.alpha_composite(background, rgba).convert("RGB")
+        # The taskbar uses the 16/24/32px icon layers. Crop empty black
+        # margins first so the supplied logo remains legible at those sizes.
+        difference = ImageChops.difference(
+            flattened, Image.new("RGB", flattened.size, (0, 0, 0))
+        ).convert("L")
+        bbox = difference.point(lambda value: 255 if value > 12 else 0).getbbox()
+        if bbox:
+            left, top, right, bottom = bbox
+            padding = int(max(right - left, bottom - top) * 0.05)
+            left = max(0, left - padding)
+            top = max(0, top - padding)
+            right = min(flattened.width, right + padding)
+            bottom = min(flattened.height, bottom + padding)
+            crop_width, crop_height = right - left, bottom - top
+            side = max(crop_width, crop_height)
+            compact = Image.new("RGB", (side, side), (0, 0, 0))
+            compact.paste(
+                flattened.crop((left, top, right, bottom)),
+                ((side - crop_width) // 2, (side - crop_height) // 2),
+            )
+            flattened = compact
+        flattened = flattened.filter(
+            ImageFilter.UnsharpMask(radius=1.1, percent=130, threshold=2)
+        )
         flattened.save(ico_path, format="ICO", sizes=[(256, 256), (128, 128), (64, 64), (32, 32), (16, 16)])
     return ico_path
 
