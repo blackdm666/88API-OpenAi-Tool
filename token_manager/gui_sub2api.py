@@ -9,6 +9,7 @@ from tkinter import messagebox, ttk
 from .gui_widgets import CheckList
 from .integrations import fetch_sub2api_usage, fetch_sub2api_accounts, fetch_sub2api_concurrency_snapshot
 from .usage_display import snapshot_usage, quota_cell, sort_account_rows, scheduling_cell, concurrency_cell
+from .recovery_support import remote_health
 from .sub2api_policy import normalize_server_url, match_remote, default_list_group_ids
 from .utils import openai_plan_label
 
@@ -226,22 +227,8 @@ class GUISub2APIMixin:
         self.invalidated_sub2api_records = [record for record in self.filtered_sub2api_records if is_sub2api_invalidated(record)]
         self._update_sub2api_group_filter_values()
 
-        active_count = 0
-        inactive_count = 0
-        error_count = 0
-        unschedulable_count = 0
-
         for idx, record in enumerate(self.filtered_sub2api_records, start=1):
             status = str(record.get("status") or "").strip().lower()
-            if status == "active":
-                active_count += 1
-            elif status == "inactive":
-                inactive_count += 1
-            elif status == "error":
-                error_count += 1
-            if record.get("schedulable") is False:
-                unschedulable_count += 1
-
             iid = self._build_sub2api_row_id(record, idx)
             self.sub2api_row_index[iid] = record
             tags: tuple[str, ...] = ()
@@ -271,13 +258,35 @@ class GUISub2APIMixin:
             if iid in selected:
                 self.sub2api_tree.selection_add(iid)
 
-        self.sub2api_stats_var.set(f'显示 {len(self.filtered_sub2api_records)} / {len(self.sub2api_records)} · 异常 {error_count} · {self.sort_description()}')
-        self.sub2api_pool_stats_var.set(
-            f"当前 {len(self.filtered_sub2api_records)}  Active {active_count}  Inactive {inactive_count}  Error {error_count}  停调度 {unschedulable_count}"
+        available_count = sum(
+            1 for record in self.filtered_sub2api_records
+            if remote_health(record) == '已启用·可调度'
+        )
+        current_concurrency = sum(
+            self._numeric_account_value(record.get('current_concurrency'))
+            for record in self.filtered_sub2api_records
+        )
+        concurrency_limit = sum(
+            self._numeric_account_value(record.get('concurrency'))
+            for record in self.filtered_sub2api_records
+        )
+        self.sub2api_stats_var.set(
+            f'账号数量：{len(self.filtered_sub2api_records)}    '
+            f'可用账号：{available_count}    '
+            f'并发请求：{current_concurrency}    '
+            f'并发上限：{concurrency_limit}'
         )
         self.sub2api_invalidated_stats_var.set(f"失效记录 {len(self.invalidated_sub2api_records)}")
         self.sub2api_tree.xview_moveto(xview)
         self.sub2api_tree.yview_moveto(yview)
+
+    @staticmethod
+    def _numeric_account_value(value) -> int:
+        try:
+            number = int(value or 0)
+        except (TypeError, ValueError):
+            return 0
+        return max(0, number)
 
     @staticmethod
     def _build_sub2api_row_id(record: dict[str, Any], idx: int) -> str:

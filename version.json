@@ -1,6 +1,6 @@
 {
   "name": "OpenAI Token Manager",
-  "version": "2.2.0-88api.23",
+  "version": "2.2.0-88api.24",
   "description": "本地OpenAI账号与Sub2API远端管理工具",
   "author": "Based on Reverse Engineering",
   "license": "Personal Use Only",
@@ -209,6 +209,14 @@
       "date": "2026-09-18",
       "changes": [
         "左侧三列布局中的上传配置按钮改名为远端配置"
+      ]
+    },
+    "2.2.0-88api.24": {
+      "date": "2026-09-18",
+      "changes": [
+        "本地账号列表统一称为本地凭据",
+        "Sub2API底部改为显示当前筛选账号数量、可用账号和并发汇总",
+        "移除远端底部旧统计、服务器快照文字和重置筛选按钮"
       ]
     }
   }

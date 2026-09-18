@@ -36,9 +36,9 @@ class GUILayoutMixin:
         bottom.configure(height=170)
         self.log_panel = bottom
 
-        left = ttk.LabelFrame(self.main_horizontal_pane, text="账号列表", padding=8, style="Card.TLabelframe")
+        left = ttk.LabelFrame(self.main_horizontal_pane, text="本地凭据", padding=8, style="Card.TLabelframe")
         heading=ttk.Frame(left,style='Card.TFrame')
-        ttk.Label(heading,text='账号列表',style='Stats.TLabel').pack(side='left')
+        ttk.Label(heading,text='本地凭据',style='Stats.TLabel').pack(side='left')
         self.account_heading_stats=ttk.Label(heading,textvariable=self.stats_var,style='CardSubtle.TLabel',font=('Microsoft YaHei UI',9))
         self.account_heading_stats.pack(side='left',padx=10)
         left.configure(labelwidget=heading)
@@ -403,8 +403,6 @@ class GUILayoutMixin:
         footer.grid(row=3,column=0,sticky='ew',pady=(5,0))
         footer.columnconfigure(0,weight=1)
         ttk.Label(footer,textvariable=self.sub2api_stats_var,style='CardSubtle.TLabel').grid(row=0,column=0,sticky='w')
-        ttk.Label(footer,textvariable=self.usage_sync_var,style='CardSubtle.TLabel').grid(row=1,column=0,sticky='w')
-        ttk.Button(footer,text='重置筛选',command=self.clear_sub2api_filters).grid(row=0,column=1,sticky='e')
 
     def _build_settings_tab(self, parent) -> None:
         settings_notebook = ttk.Notebook(parent)
