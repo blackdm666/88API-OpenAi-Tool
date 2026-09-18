@@ -16,6 +16,25 @@ from .services import export_organized_payloads, refresh_record, run_batch, sync
 
 
 class GUIRecordsMixin:
+    def show_token_context_menu(self, event):
+        row = self.token_tree.identify_row(event.y)
+        if row and row not in self.token_tree.selection():
+            self.token_tree.selection_set(row)
+        if not row:
+            return
+        menu = tk.Menu(self.root, tearoff=False)
+        menu.add_command(label="刷新本地令牌", command=self.refresh_selected)
+        menu.add_command(label="上传到 Sub2API", command=self.upload_selected)
+        menu.add_separator()
+        menu.add_command(label="监控选中", command=lambda: self.set_recovery_selected(True))
+        menu.add_command(label="取消监控", command=lambda: self.set_recovery_selected(False))
+        menu.add_separator()
+        menu.add_command(label="删除账号", command=self.delete_selected)
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
     def reload_tokens(self, save_first: bool = True) -> None:
         if save_first:
             self.save_settings(reload_tokens=False, notify=False)

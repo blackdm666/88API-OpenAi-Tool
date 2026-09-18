@@ -74,23 +74,20 @@ class GUILayoutMixin:
             action_frame.columnconfigure(column, weight=1)
         ttk.Button(action_frame, text="刷新列表", command=self.reload_tokens, style="Primary.TButton").grid(row=0, column=0, sticky="ew", padx=3, pady=3)
         ttk.Button(action_frame, text="刷新选中", command=self.refresh_selected).grid(row=0, column=1, sticky="ew", padx=3, pady=3)
-        ttk.Button(action_frame, text="刷新当前", command=self.refresh_all).grid(row=0, column=2, sticky="ew", padx=3, pady=3)
-        ttk.Button(action_frame, text="同步标签", command=self.sync_selected_labels).grid(row=1, column=0, sticky="ew", padx=3, pady=3)
-        ttk.Button(action_frame, text="删除账号", command=self.delete_selected).grid(row=1, column=1, sticky="ew", padx=3, pady=3)
+        ttk.Button(action_frame, text="同步标签", command=self.sync_selected_labels).grid(row=0, column=2, sticky="ew", padx=3, pady=3)
+        ttk.Button(action_frame, text="删除账号", command=self.delete_selected).grid(row=1, column=0, sticky="ew", padx=3, pady=3)
         self.auto_refresh_button = ttk.Button(action_frame, text="启动自动维护", command=self.toggle_auto_refresh)
-        self.auto_refresh_button.grid(row=1, column=2, sticky="ew", padx=3, pady=3)
+        self.auto_refresh_button.grid(row=1, column=1, sticky="ew", padx=3, pady=3)
 
         upload_frame = ttk.Frame(parent, style="Card.TFrame")
         upload_frame.grid(row=1, column=0, sticky="ew", pady=(0, 8))
-        for column in range(3):
+        for column in range(4):
             upload_frame.columnconfigure(column, weight=1)
         for row, column, label, command in [
             (0, 0, '上传选中', self.upload_selected),
-            (0, 1, '上传当前', self.upload_all),
-            (0, 2, '上传配置', self.open_sub2api_upload_settings),
-            (1, 0, '监控选中', lambda: self.set_recovery_selected(True)),
-            (1, 1, '取消监控', lambda: self.set_recovery_selected(False)),
-            (1, 2, '导入 / 导出', lambda: self.right_notebook.select(self.convert_tab)),
+            (0, 1, '上传配置', self.open_sub2api_upload_settings),
+            (0, 2, '监控选中', lambda: self.set_recovery_selected(True)),
+            (0, 3, '导入 / 导出', lambda: self.right_notebook.select(self.convert_tab)),
         ]:
             ttk.Button(upload_frame, text=label, command=command).grid(row=row, column=column, sticky='ew', padx=3, pady=3)
 
@@ -157,6 +154,7 @@ class GUILayoutMixin:
         scrollbar_y.grid(row=0, column=1, sticky="ns")
         scrollbar_x.grid(row=1, column=0, sticky="ew")
         self.token_tree.bind("<<TreeviewSelect>>", self.on_selection_changed)
+        self.token_tree.bind("<Button-3>", self.show_token_context_menu, add="+")
         self.token_tree.tag_configure("expired", foreground="#a94438")
         self.token_tree.tag_configure("warning", foreground=self.palette["accent"])
 
