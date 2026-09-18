@@ -86,6 +86,7 @@ class TokenManagerGUI(
         self.log_bus = LogBus()
         self._state_lock = threading.Lock()
         self.records: list[dict[str, Any]] = []
+        self.local_record_index: dict[str, dict[str, Any]] = {}
         self.sub2api_records: list[dict[str, Any]] = []
         self.filtered_sub2api_records: list[dict[str, Any]] = []
         self.invalidated_sub2api_records: list[dict[str, Any]] = []

@@ -24,6 +24,7 @@ class GUIRecordsMixin:
         for item in self.token_tree.get_children():
             self.token_tree.delete(item)
         all_records = self.store.load_all()
+        self.local_record_index = {str(r.get('email') or '').strip().lower(): r for r in all_records if str(r.get('email') or '').strip()}
         rank={r["id"]:i for i,r in enumerate(self.sorted_sub2api_records())}
         def remote_order(record):
             remote=self.local_remote_record(record)

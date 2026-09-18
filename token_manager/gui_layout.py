@@ -363,7 +363,7 @@ class GUILayoutMixin:
         ttk.Button(toolbar,text='Sub2API 设置',command=self.open_sub2api_upload_settings).pack(side='left')
         more = ttk.Menubutton(toolbar,text='账号操作 ▾')
         menu = tk.Menu(more,tearoff=False)
-        menu.add_command(label='刷新选中账号凭据',command=self.refresh_selected_sub2api_remote)
+        menu.add_command(label='刷新令牌（选中）',command=self.refresh_selected_sub2api_remote)
         menu.add_separator()
         menu.add_command(label='启用调度（选中）',command=lambda:self.set_selected_sub2api_schedulable(True))
         menu.add_command(label='停用调度（选中）',command=lambda:self.set_selected_sub2api_schedulable(False))
@@ -397,7 +397,7 @@ class GUILayoutMixin:
         table.columnconfigure(0,weight=1);table.rowconfigure(0,weight=1)
         columns=('id','email','groups','status','scheduling','concurrency','quota7','error')
         self.sub2api_tree=UsageTreeview(table,columns=columns,show='headings',selectmode='extended',height=12)
-        for key,label,width in [('id','ID',40),('email','账号名称',105),('groups','分组',70),('status','状态',55),('scheduling','调度',70),('concurrency','并发',65),('quota7','7d已用',60),('error','错误摘要',85)]:
+        for key,label,width in [('id','ID',40),('email','账号名称',105),('groups','账号标签',105),('status','状态',55),('scheduling','调度',70),('concurrency','并发',65),('quota7','7d已用',60),('error','错误摘要',85)]:
             self.sub2api_tree.heading(key,text=label+(' ↑' if key=='id' else ''),command=lambda k=key:self.sort_sub2api_accounts(k))
             self.sub2api_tree.column(key,width=width,minwidth=40,stretch=key in ('email','groups','error'))
         y=ttk.Scrollbar(table,orient='vertical',command=self.sub2api_tree.yview)

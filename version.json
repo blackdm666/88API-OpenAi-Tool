@@ -1,6 +1,6 @@
 {
   "name": "OpenAI Token Manager",
-  "version": "2.2.0-88api.14",
+  "version": "2.2.0-88api.15",
   "description": "本地OpenAI账号与Sub2API远端管理工具",
   "author": "Based on Reverse Engineering",
   "license": "Personal Use Only",
@@ -149,6 +149,13 @@
         "Sub2API列表每5秒同步current_concurrency/并发上限",
         "移除两侧5h额度列，保留7d额度",
         "OpenAI身份标签按Sub2API plan_type定义显示"
+      ]
+    },
+    "2.2.0-88api.15": {
+      "date": "2026-09-18",
+      "changes": [
+        "Sub2API列表分组列替换为账号标签",
+        "刷新选中账号凭据统一命名为刷新令牌，明确调用远端OAuth令牌刷新接口"
       ]
     }
   }

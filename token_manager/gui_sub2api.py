@@ -10,6 +10,7 @@ from .gui_widgets import CheckList
 from .integrations import fetch_sub2api_usage, fetch_sub2api_accounts, fetch_sub2api_concurrency_snapshot
 from .usage_display import snapshot_usage, quota_cell, sort_account_rows, scheduling_cell, concurrency_cell
 from .sub2api_policy import normalize_server_url, match_remote, default_list_group_ids
+from .utils import openai_plan_label
 
 from .services import (
     delete_sub2api_remote_records,
@@ -99,6 +100,14 @@ class GUISub2APIMixin:
         if len(text) <= max_len:
             return text
         return f"{text[: max_len - 1]}…"
+
+    def _sub2api_account_label(self, record: dict[str, Any]) -> str:
+        email = str(record.get('email') or '').strip().lower()
+        local = self.local_record_index.get(email)
+        if local:
+            return self.plan_label(local)
+        raw = record.get('plan_type') or record.get('parent_plan_type') or (record.get('extra') or {}).get('plan_type')
+        return openai_plan_label(raw)
 
     def _sub2api_flags_text(self, record: dict[str, Any]) -> str:
         flags: list[str] = []
@@ -231,7 +240,7 @@ class GUISub2APIMixin:
                 values=(
                     record.get("id", ""),
                     record.get("name") or record.get("email", ""),
-                    self._sub2api_groups_text(record),
+                    self._sub2api_account_label(record),
                     record.get("status", ""),
                     scheduling_cell(record),
                     concurrency_cell(record),
@@ -445,14 +454,14 @@ class GUISub2APIMixin:
             return refresh_sub2api_remote_records(records, settings, proxy_url=proxy, log_fn=self.log)
 
         def done(result):
-            self.set_running(False, "Sub2API 远端刷新完成")
+            self.set_running(False, "Sub2API 刷新令牌完成")
             if result.get("error"):
                 messagebox.showerror("错误", result["error"])
                 return
             self.persist_runtime_settings(settings)
             messagebox.showinfo(
                 "完成",
-                f"{label}远端刷新完成\n成功: {result.get('success_count', 0)}\n失败: {result.get('fail_count', 0)}",
+                f"{label}刷新令牌完成\n成功: {result.get('success_count', 0)}\n失败: {result.get('fail_count', 0)}",
             )
             self.refresh_sub2api_accounts()
 

@@ -35,3 +35,5 @@
 - 2.2.0-88api.13：Sub2API账号操作菜单只提供“启用调度/停用调度”，调用官方POST /accounts/:id/schedulable；不再使用bulk-update status。status=active/inactive仅由账号状态操作或服务端返回决定。核对#333、#342时官方列表与详情均为active、schedulable=true、无冷却。
 
 - 2.2.0-88api.14：右侧Sub2API列表使用官方accounts?lite=1读取current_concurrency和concurrency，每5秒同步；current_concurrency是当前请求占用计数，不等同active_sessions（OpenAI通常为空）。额度展示移除5h，仅保留7d。左侧身份标签按Sub2API plan_type：Plus、Pro 20x、Pro 5x、Business Standard、Business Premium、Free、Enterprise、Unknown。
+
+- 2.2.0-88api.15：右侧Sub2API列表原“分组”列改为“账号标签”，标签按OpenAI plan_type定义并优先使用本地匹配账号的Sub2API标签。账号操作菜单统一称“刷新令牌（选中）”；该动作调用Sub2API POST /api/v1/admin/accounts/batch-refresh，刷新远端OAuth令牌，不是刷新列表或额度。
