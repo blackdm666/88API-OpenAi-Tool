@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 APP_NAME = "OpenAI Token Manager"
-APP_VERSION = "2.2.0-88api.33"
+APP_VERSION = "2.2.0-88api.34"
 
 DEFAULT_OAUTH_AUTH_URL = "https://auth.openai.com/oauth/authorize"
 DEFAULT_OAUTH_TOKEN_URL = "https://auth.openai.com/oauth/token"
@@ -53,21 +53,21 @@ def app_dir() -> Path:
 
 
 APP_DIR = app_dir()
-APP_CONFIG_FILE = APP_DIR / "token_manager_config.json"
-
 
 def _documents_dir() -> Path:
     home = Path.home()
     for candidate in (
+        home / "Documents",
         home / "OneDrive" / "文档",
         home / "OneDrive" / "Documents",
-        home / "Documents",
     ):
         if candidate.exists():
             return candidate
     return home / "Documents"
 
 
-_APP_DATA_ROOT = _documents_dir() / "Sub2api"
+_APP_DATA_ROOT = _documents_dir() / "sub2api"
 DEFAULT_TOKENS_DIR = _APP_DATA_ROOT / "tokens"
 DEFAULT_OUTPUTS_DIR = _APP_DATA_ROOT / "outputs"
+APP_CONFIG_FILE = DEFAULT_OUTPUTS_DIR / "token_manager_config.json"
+LEGACY_APP_CONFIG_FILE = APP_DIR / "token_manager_config.json"

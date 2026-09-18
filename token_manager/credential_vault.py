@@ -10,6 +10,8 @@ from pathlib import Path
 import tempfile
 import threading
 
+from .constants import APP_CONFIG_FILE
+
 _lock = threading.RLock()
 
 
@@ -23,6 +25,10 @@ def documents_directory():
 
 
 def vault_path():
+    return APP_CONFIG_FILE.parent / 'accounts.dpapi'
+
+
+def legacy_vault_path():
     return documents_directory() / 'OpenAI-Token-Manager' / 'credentials' / 'accounts.dpapi'
 
 
@@ -55,13 +61,17 @@ def crypt(data, *, decrypt=False):
 class CredentialVault:
     def __init__(self, path=None):
         self.path = Path(path) if path else vault_path()
+        self.legacy_path = legacy_vault_path() if path is None else None
 
     def load(self):
         with _lock:
-            if not self.path.exists():
+            source = self.path
+            if not source.exists() and self.legacy_path and self.legacy_path.exists():
+                source = self.legacy_path
+            if not source.exists():
                 return {}
             try:
-                data = json.loads(crypt(self.path.read_bytes(), decrypt=True))
+                data = json.loads(crypt(source.read_bytes(), decrypt=True))
                 if data.get('version') != 1 or not isinstance(data.get('accounts'), dict):
                     raise ValueError()
                 return data['accounts']

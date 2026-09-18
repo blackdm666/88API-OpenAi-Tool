@@ -8,6 +8,7 @@ from typing import Any
 from .constants import (
     APP_DIR,
     APP_CONFIG_FILE,
+    LEGACY_APP_CONFIG_FILE,
     DEFAULT_AUTO_REFRESH_INTERVAL,
     DEFAULT_AUTO_REFRESH_THRESHOLD,
     DEFAULT_OAUTH_AUTH_URL,
@@ -49,13 +50,23 @@ def _safe_token_directory(raw: Any) -> str:
         path = Path(configured).expanduser().resolve()
     except (OSError, RuntimeError):
         return configured
-    if path in _known_documents_dirs():
-        # Keep existing desktop data when present; otherwise use the dedicated
-        # Documents/Sub2api location requested by the application design.
-        for candidate in (APP_DIR / "tokens", DEFAULT_TOKENS_DIR):
-            if candidate.exists():
-                return str(candidate)
-        return str(path / "Sub2api" / "tokens")
+    legacy_desktop = (APP_DIR / "tokens").resolve()
+    if path == legacy_desktop or path in _known_documents_dirs():
+        return str(DEFAULT_TOKENS_DIR)
+    return configured
+
+
+def _safe_output_directory(raw: Any) -> str:
+    configured = str(raw or "").strip()
+    if not configured:
+        return str(DEFAULT_OUTPUTS_DIR)
+    try:
+        path = Path(configured).expanduser().resolve()
+    except (OSError, RuntimeError):
+        return configured
+    legacy_desktop = (APP_DIR / "outputs").resolve()
+    if path == legacy_desktop or path in _known_documents_dirs():
+        return str(DEFAULT_OUTPUTS_DIR)
     return configured
 
 
@@ -128,23 +139,23 @@ def _migrate_legacy_config(raw: dict[str, Any]) -> dict[str, Any]:
         root = Path(str(migrated["custom_scan_root"])).expanduser()
         migrated["tokens_dir"] = str(root if root.name.lower() == "tokens" else root / "tokens")
     migrated["tokens_dir"] = _safe_token_directory(migrated.get("tokens_dir"))
+    migrated["outputs_dir"] = _safe_output_directory(migrated.get("outputs_dir"))
     (migrated.get("integrations") or {}).pop("cpa", None)
     return migrated
 
 
 def load_app_config() -> dict[str, Any]:
     config = default_config()
-    if not APP_CONFIG_FILE.exists():
-        return config
-
-    try:
-        raw = json.loads(APP_CONFIG_FILE.read_text(encoding="utf-8-sig"))
-    except Exception:
-        return config
-
-    if not isinstance(raw, dict):
-        return config
-    return _deep_merge(config, _migrate_legacy_config(raw))
+    for path in (APP_CONFIG_FILE, LEGACY_APP_CONFIG_FILE):
+        if not path.exists():
+            continue
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8-sig"))
+        except Exception:
+            continue
+        if isinstance(raw, dict):
+            return _deep_merge(config, _migrate_legacy_config(raw))
+    return config
 
 
 def save_app_config(config: dict[str, Any]) -> None:
