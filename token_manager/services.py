@@ -10,11 +10,11 @@ import requests
 
 from .converters import to_sub2api_payload
 from .integrations import (
-    bulk_update_sub2api_accounts,
     delete_sub2api_account,
     fetch_sub2api_accounts,
     fetch_sub2api_groups,
     refresh_sub2api_accounts,
+    set_sub2api_schedulable,
     upload_state_patch,
     upload_to_sub2api,
     sub2api_upload_payload,
@@ -263,30 +263,32 @@ def refresh_sub2api_remote_records(
     }
 
 
-def set_sub2api_remote_records_status(
+def set_sub2api_remote_records_schedulable(
     records: list[dict[str, Any]],
     settings: dict[str, Any],
     *,
-    status: str,
+    enabled: bool,
     proxy_url: str = "",
     log_fn: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
-    account_ids = sorted({safe_int(record.get("id")) for record in records if safe_int(record.get("id")) > 0})
-    if not account_ids:
+    """Toggle Sub2API scheduling only; never change account status."""
+    unique = {safe_int(record.get('id')) for record in records if safe_int(record.get('id')) > 0}
+    if not unique:
         return {"success_count": 0, "fail_count": 0, "total": 0, "results": []}
+
+    def job(record_id):
+        verified = set_sub2api_schedulable(settings, record_id, enabled, proxy_url=proxy_url)
+        return True, f"账号 #{record_id} 调度{'已开启' if enabled else '已关闭'}；账号状态 {verified.get('status', '未知')}"
+
+    result = run_batch(
+        [{'id': account_id} for account_id in sorted(unique)],
+        workers=min(len(unique), 4),
+        job=lambda record: job(record['id']),
+        progress_cb=None,
+    )
     if callable(log_fn):
-        log_fn(f"开始批量更新 Sub2API 状态 {status} 共 {len(account_ids)} 个")
-    data = bulk_update_sub2api_accounts(settings, account_ids, {"status": str(status or "").strip()}, proxy_url=proxy_url)
-    if callable(log_fn):
-        log_fn(
-            f"Sub2API 状态更新结束 成功 {int(data.get('success') or 0)} 失败 {int(data.get('failed') or 0)}"
-        )
-    return {
-        **data,
-        "success_count": int(data.get("success") or 0),
-        "fail_count": int(data.get("failed") or 0),
-        "total": len(account_ids),
-    }
+        log_fn(f"Sub2API 调度开关更新结束：{'开启' if enabled else '关闭'} 成功 {result.get('success_count', 0)} 失败 {result.get('fail_count', 0)}")
+    return result
 
 
 def delete_sub2api_remote_records(

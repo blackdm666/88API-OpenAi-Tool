@@ -31,3 +31,5 @@
 - 2.2.0-88api.11：Sub2API列表在状态右侧增加“调度”列，可点击排序。依据schedulable、status及冷却截止时间显示参与调度/已关闭/开启·账号停用或异常/开启·临时、限流、过载冷却；未知不当作开启。调度表示服务器快照中的参与资格，不代表当前正在处理请求；随列表轮询更新，不修改远端调度开关。
 
 - 2.2.0-88api.12：自动维护默认纳入已有Sub2API成功上传且唯一匹配的本地账号，不再要求先点击监控选中；“取消监控”写入manual_disabled，保持人工排除。恢复或检查active账号时，若schedulable=false且auto_enable_schedulable开启，调用官方POST /accounts/:id/schedulable true并读取确认，再进行模型测试。调度未知不当作参与调度。
+
+- 2.2.0-88api.13：Sub2API账号操作菜单只提供“启用调度/停用调度”，调用官方POST /accounts/:id/schedulable；不再使用bulk-update status。status=active/inactive仅由账号状态操作或服务端返回决定。核对#333、#342时官方列表与详情均为active、schedulable=true、无冷却。

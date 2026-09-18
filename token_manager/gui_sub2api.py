@@ -16,7 +16,7 @@ from .services import (
     fetch_sub2api_remote_snapshot,
     is_sub2api_invalidated,
     refresh_sub2api_remote_records,
-    set_sub2api_remote_records_status,
+    set_sub2api_remote_records_schedulable,
 )
 
 
@@ -416,7 +416,7 @@ class GUISub2APIMixin:
 
         self.run_background("正在刷新 Sub2API 远端账号", worker, done)
 
-    def set_selected_sub2api_status(self, status: str) -> None:
+    def set_selected_sub2api_schedulable(self, enabled: bool) -> None:
         records = self.selected_sub2api_pool_records()
         if not records:
             messagebox.showerror("错误", "请先选择远端 Sub2API 账号")
@@ -425,23 +425,23 @@ class GUISub2APIMixin:
         proxy = settings.get("http_proxy", "")
 
         def worker():
-            return set_sub2api_remote_records_status(
+            return set_sub2api_remote_records_schedulable(
                 records,
                 settings,
-                status=status,
+                enabled=enabled,
                 proxy_url=proxy,
                 log_fn=self.log,
             )
 
         def done(result):
-            self.set_running(False, "Sub2API 状态更新完成")
+            self.set_running(False, "Sub2API 调度更新完成")
             if result.get("error"):
                 messagebox.showerror("错误", result["error"])
                 return
             self.persist_runtime_settings(settings)
             messagebox.showinfo(
                 "完成",
-                f"状态更新完成\n成功: {result.get('success_count', 0)}\n失败: {result.get('fail_count', 0)}",
+                f"调度更新完成\n成功: {result.get('success_count', 0)}\n失败: {result.get('fail_count', 0)}",
             )
             self.refresh_sub2api_accounts()
 

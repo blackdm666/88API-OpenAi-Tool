@@ -1,6 +1,6 @@
 {
   "name": "OpenAI Token Manager",
-  "version": "2.2.0-88api.12",
+  "version": "2.2.0-88api.13",
   "description": "本地OpenAI账号与Sub2API远端管理工具",
   "author": "Based on Reverse Engineering",
   "license": "Personal Use Only",
@@ -134,6 +134,13 @@
         "已成功上传且唯一匹配账号自动纳入维护，手动取消监控账号保持排除",
         "401恢复后可自动开启Sub2API持久调度并读回确认",
         "修复未监控账号被自动维护循环直接跳过"
+      ]
+    },
+    "2.2.0-88api.13": {
+      "date": "2026-09-18",
+      "changes": [
+        "启用/停用选中改为仅切换Sub2API schedulable，不再修改账号status",
+        "修复#333/#342等账号启用后列表显示旧调度状态"
       ]
     }
   }

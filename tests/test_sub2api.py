@@ -8,6 +8,7 @@ from token_manager.config import default_config
 from token_manager.store import TokenStore
 from token_manager import integrations as api
 from token_manager.maintenance import recovery_cycle
+from token_manager.services import set_sub2api_remote_records_schedulable
 from token_manager.sub2api_policy import (
     normalize_server_url,
     upload_options,
@@ -57,6 +58,14 @@ class Fixture:
 
 
 class Sub2APITest(Fixture, unittest.TestCase):
+    def test_schedulable_action_does_not_update_account_status(self):
+        with patch('token_manager.services.set_sub2api_schedulable', side_effect=lambda settings, account_id, enabled, proxy_url='': {"id": account_id, "status": "active", "schedulable": enabled}) as setter:
+            result = set_sub2api_remote_records_schedulable(
+                [{"id": 333}, {"id": 342}], self.settings, enabled=True
+            )
+        self.assertEqual(result['success_count'], 2)
+        self.assertEqual(setter.call_count, 2)
+        self.assertTrue(all(call.args[2] is True for call in setter.call_args_list))
     def test_url_normalization_and_rejection(self):
         for raw in [
             " sub.example.test/ ",
