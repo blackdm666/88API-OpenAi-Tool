@@ -51,7 +51,7 @@ class GUILayoutMixin:
         right = ttk.LabelFrame(self.main_horizontal_pane, text="功能区", padding=8, style="Card.TLabelframe")
         self.account_panel = left
         self.main_horizontal_pane.add(left, weight=1)
-        self.main_horizontal_pane.add(right, weight=3)
+        self.main_horizontal_pane.add(right, weight=1)
         self.main_vertical_pane.add(top_host, weight=5)
         self.main_vertical_pane.add(bottom, weight=2)
         return left, right, bottom
@@ -64,7 +64,7 @@ class GUILayoutMixin:
             log_height = 100
             if str(self.log_panel) in self.main_vertical_pane.panes():
                 self.main_vertical_pane.sashpos(0, max(420, total_height - log_height))
-            self.main_horizontal_pane.sashpos(0, min(430, int(total_width * 0.34)))
+            self.main_horizontal_pane.sashpos(0, total_width // 2)
         except (AttributeError, tk.TclError):
             return
 

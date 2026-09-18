@@ -1,6 +1,6 @@
 {
   "name": "OpenAI Token Manager",
-  "version": "2.2.0-88api.3",
+  "version": "2.2.0-88api.4",
   "description": "本地OpenAI账号与Sub2API远端管理工具",
   "author": "Based on Reverse Engineering",
   "license": "Personal Use Only",
@@ -67,6 +67,12 @@
       "date": "2026-09-18",
       "changes": [
         "移除本地账号快捷标签按钮行，保留搜索及标签/状态下拉筛选，增加列表空间"
+      ]
+    },
+    "2.2.0-88api.4": {
+      "date": "2026-09-18",
+      "changes": [
+        "默认左右双栏各50%，恢复双栏时均分，窗口缩放使用相同伸缩权重"
       ]
     }
   }
