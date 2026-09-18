@@ -122,7 +122,7 @@ class GUILayoutMixin:
         status_combo = ttk.Combobox(
             filter_frame,
             textvariable=self.status_filter_var,
-            values=["全部状态", "有效", "已过期", "上传异常"],
+            values=["全部状态", "未过期", "已过期", "可调度", "授权失效", "待补授权", "已停用", "上传异常"],
             state="readonly",
         )
         status_combo.grid(row=0, column=5, sticky="ew", padx=3, pady=3)
@@ -321,6 +321,9 @@ class GUILayoutMixin:
         ttk.Label(controls, text="每行一个 账号----密码----2FA密匙", style="CardSubtle.TLabel").grid(row=1, column=2, columnspan=3, sticky="w", padx=3, pady=3)
         ttk.Label(controls, textvariable=self.auth2fa_stats_var, style="Stats.TLabel").grid(row=1, column=5, columnspan=2, sticky="e", padx=3, pady=3)
         ttk.Label(controls, textvariable=self.auth2fa_mode_hint_var, style="CardSubtle.TLabel").grid(row=2, column=0, columnspan=7, sticky="w", padx=3, pady=(0, 3))
+        ttk.Button(controls, text='加密保存资料', command=self.save_auth2fa_credentials).grid(row=3, column=0, columnspan=2, sticky='ew', padx=3)
+        ttk.Button(controls, text='载入已存资料', command=self.load_auth2fa_credentials).grid(row=3, column=2, columnspan=2, sticky='ew', padx=3)
+        ttk.Label(controls, textvariable=self.auth2fa_vault_var, style='CardSubtle.TLabel', wraplength=300).grid(row=3, column=4, columnspan=3, sticky='w', padx=3)
 
         input_card = ttk.Frame(parent, style="Card.TFrame")
         input_card.grid(row=1, column=0, sticky="nsew")
@@ -357,7 +360,7 @@ class GUILayoutMixin:
         toolbar.grid(row=0,column=0,sticky='ew',pady=(0,8))
         ttk.Button(toolbar,text='刷新列表',command=self.refresh_sub2api_accounts,style='Primary.TButton').pack(side='left')
         ttk.Button(toolbar,text='更新用量',command=self.refresh_sub2api_usage).pack(side='left',padx=6)
-        ttk.Button(toolbar,text='上传配置',command=self.open_sub2api_upload_settings).pack(side='left')
+        ttk.Button(toolbar,text='Sub2API 设置',command=self.open_sub2api_upload_settings).pack(side='left')
         more = ttk.Menubutton(toolbar,text='账号操作 ▾')
         menu = tk.Menu(more,tearoff=False)
         menu.add_command(label='刷新选中账号凭据',command=self.refresh_selected_sub2api_remote)
@@ -459,7 +462,7 @@ class GUILayoutMixin:
         self._add_labeled_entry(sub2api_frame, "Group IDs", self.sub2api_group_ids_var)
         self._add_labeled_entry(sub2api_frame, "管理邮箱", self.sub2api_admin_email_var)
         self._add_labeled_entry(sub2api_frame, "管理密码", self.sub2api_admin_password_var, show="*")
-        ttk.Button(sub2api_frame, text="连接 / 上传参数 / 分组与代理", command=self.open_sub2api_upload_settings, style="Primary.TButton").pack(fill=tk.X, pady=12)
+        ttk.Button(sub2api_frame, text="Sub2API 设置（连接 / 上传 / 自动维护）", command=self.open_sub2api_upload_settings, style="Primary.TButton").pack(fill=tk.X, pady=12)
         ttk.Button(sub2api_frame, text="保存设置", command=self.save_settings).pack(anchor=tk.E)
 
     def _build_log_panel(self, parent) -> None:

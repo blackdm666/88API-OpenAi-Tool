@@ -100,6 +100,8 @@ class TokenManagerGUI(
         self._snapshot_inflight = False
         self.sub2api_snapshot_server = ""
         self.sub2api_group_filters = set()
+        self.sub2api_group_filter_ids = set()
+        self.reset_sub2api_default_groups()
         self.manual_oauth_start = None
         self.running_job = False
         self._running_job_lock = threading.Lock()
@@ -154,6 +156,7 @@ class TokenManagerGUI(
         self.auth2fa_mode_hint_var = tk.StringVar(value="")
         self.auth2fa_stats_var = tk.StringVar(value="待授权 0")
         self.auth2fa_output_var = tk.StringVar(value="")
+        self.auth2fa_vault_var = tk.StringVar(value='账号资料加密保存于文档目录')
         self.status_var = tk.StringVar(value="就绪")
         self.usage_sync_var = tk.StringVar(value='服务器快照 · 加载后每60秒同步')
 
@@ -161,6 +164,7 @@ class TokenManagerGUI(
         self.setup_ui()
         self.update_auth2fa_mode_hint(announce=False, persist=False)
         self.update_auth2fa_input_stats()
+        self.update_vault_status()
         self.reload_tokens()
         self.poll_logs()
         self.update_ui_timer()
@@ -178,6 +182,8 @@ class TokenManagerGUI(
             return
         if self.is_running():
             messagebox.showinfo('任务进行中', '请等待当前任务完成后关闭，避免中断凭据写入。')
+            return
+        if not self.save_auth2fa_credentials(silent=True):
             return
         self.root.destroy()
 

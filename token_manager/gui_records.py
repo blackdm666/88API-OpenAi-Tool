@@ -8,6 +8,8 @@ from tkinter import filedialog, messagebox
 
 from .integrations import sub2api_upload_payload
 from .usage_display import quota_cell
+from .recovery_support import remote_health
+from .sub2api_policy import auth_failure_kind
 from .converters import from_local_payload, from_sub2api_payload
 from .services import export_organized_payloads, refresh_record, run_batch, sync_subscription, upload_record
 
@@ -17,6 +19,7 @@ class GUIRecordsMixin:
         if save_first:
             self.save_settings(reload_tokens=False, notify=False)
         selected_ids = set(self.token_tree.selection())
+        xview, yview = self.token_tree.xview()[0], self.token_tree.yview()[0]
         for item in self.token_tree.get_children():
             self.token_tree.delete(item)
         all_records = self.store.load_all()
@@ -31,7 +34,7 @@ class GUIRecordsMixin:
             remote=self.local_remote_record(record)
             usage=self.usage_for_record(remote) if remote else {}
             upload_summary = self.upload_summary(record)
-            status = "已过期" if record["_is_expired"] else "有效"
+            status = self.account_status(record, remote)
             if record.get("uploads"):
                 for target_state in record["uploads"].values():
                     if isinstance(target_state, dict) and not target_state.get("ok", True):
@@ -61,7 +64,23 @@ class GUIRecordsMixin:
             )
             if iid in selected_ids:
                 self.token_tree.selection_add(iid)
+        self.token_tree.xview_moveto(xview)
+        self.token_tree.yview_moveto(yview)
         self.on_selection_changed()
+
+    def account_status(self, record, remote=None):
+        if remote:
+            if auth_failure_kind(remote):
+                remote_access = (remote.get('credentials') or {}).get('access_token')
+                if not remote_access:
+                    return '授权失效'
+                same = remote_access == record.get('access_token')
+                return '授权失效' if same else '待补授权'
+            health = remote_health(remote)
+            if health != '已启用·可调度':
+                return health.replace('已启用·', '')
+            return '可调度'
+        return '已过期' if record['_is_expired'] else '未过期'
 
     def filter_records(self, records: list[dict[str, object]]) -> list[dict[str, object]]:
         search = self.search_var.get().strip().lower()
@@ -79,11 +98,13 @@ class GUIRecordsMixin:
                 continue
             if plan_filter and plan_filter != "全部标签".lower() and plan_filter != plan_label:
                 continue
-            if status_filter == "有效" and record["_is_expired"]:
+            if status_filter in ("有效", "未过期") and record["_is_expired"]:
                 continue
             if status_filter == "已过期" and not record["_is_expired"]:
                 continue
             if status_filter == "上传异常" and not has_upload_error:
+                continue
+            if status_filter in ('可调度', '授权失效', '待补授权', '已停用') and self.account_status(record, self.local_remote_record(record)) != status_filter:
                 continue
             filtered.append(record)
         return filtered
@@ -159,6 +180,14 @@ class GUIRecordsMixin:
         self.run_background("正在清理 Tokens 目录", worker, done)
 
     def upload_summary(self, record: dict[str, object]) -> str:
+        remote = self.local_remote_record(record)
+        if remote:
+            if not (remote.get('credentials') or {}).get('access_token'):
+                return f"已上传 #{remote['id']} · 凭据已隐藏"
+            synced = bool(record.get('access_token')) and (remote.get('credentials') or {}).get('access_token') == record.get('access_token')
+            return f"已上传 #{remote['id']} · " + ('已同步' if synced else '凭据不同')
+        if self.sub2api_snapshot_server:
+            return '未匹配远端'
         uploads = record.get("uploads") or {}
         parts: list[str] = []
         for key in ("sub2api",):
@@ -166,7 +195,7 @@ class GUIRecordsMixin:
             if not state:
                 continue
             parts.append(f"{key}:{'OK' if state.get('ok') else 'ERR'}")
-        return " ".join(parts) or "-"
+        return ('历史 ' + " ".join(parts)) if parts else '未核验'
 
     def plan_label(self, record: dict[str, object]) -> str:
         plan = str(record.get("_plan") or "unknown").strip().lower()
@@ -219,7 +248,7 @@ class GUIRecordsMixin:
 标签: {self.plan_label(record)}
 标签来源: {subscription.get('source', '')}
 订阅到期: {subscription.get('subscription_active_until', '') or '未知'}
-状态: {'已过期' if record['_is_expired'] else '有效'}
+本地期限: {'已过期' if record['_is_expired'] else '未过期（不代表授权未撤销）'}
 剩余时间: {record['_remaining_text']}
 最后刷新: {record.get('last_refresh', '')}
 创建时间: {record.get('created_at', '')}
@@ -229,6 +258,8 @@ class GUIRecordsMixin:
 
 自动恢复: {(record.get('sub2api_recovery') or {}).get('status', '未监控')}
 恢复说明: {(record.get('sub2api_recovery') or {}).get('message', '在左侧选择账号后点击“监控选中”')}
+远端核验: {(record.get('sub2api_recovery') or {}).get('remote_health', '未核验')}
+模型测试: {(record.get('sub2api_recovery') or {}).get('probe_model', '-')} / {(record.get('sub2api_recovery') or {}).get('probe_message', '尚未测试')}
 
 上传状态:
 {chr(10).join(upload_lines) if upload_lines else '暂无'}

@@ -19,3 +19,11 @@
 - GitHub发布、全量生产自动恢复需依据当次用户授权，不因为凭据可用而自行启用。
 
 - 2.2.0-88api.9：任务忙碌或自动维护运行时，重复点击刷新等操作仅记录日志提示，不再弹出阻塞提示框；禁止在任务锁内调用Tk弹窗或其他UI回调，避免定时器重入死锁。
+
+- 2.2.0-88api.10经用户明确授权扩展自动维护：401/永久撤销可使用CredentialVault中的账号密码与TOTP重新登录，当前Windows用户DPAPI加密文件位于系统文档/OpenAI-Token-Manager/credentials/accounts.dpapi。仅处理已监控、唯一匹配账号；新凭据严格校验邮箱/工作区/有效期后落盘，再用原账号apply-oauth-credentials补授权。自动登录不写诊断报告，不绕过登录挑战。缺资料、挑战、身份不符或超过重试限制转人工。
+- Sub2API设置新增自动维护页：auto_reauthorize_401/recovery_test_enabled默认true，recovery_test_model默认gpt-5.5（已用#384原生测试验证）。补授权后先GET核验active/schedulable/冷却，再POST accounts/:id/test解析SSE test_complete.success；每新凭据至多一次，持久化测试开始避免崩溃后重复计费。429/主动停用不触发登录，测试失败不等同授权失败。人工停用不自动启用。普通轮询仅GET不发模型请求。
+- 凭据资料只在2FA导入、点击加密保存、启动批量授权或正常退出时保存；启动只显示资料数量，点击载入才解密显示。旧版本未持久化的输入不可自动恢复，需首次导入。测试必须patch资料库或使用临时路径，不能加载真实资料；禁止为测试人为制造生产401。
+
+- 生产接口注意：列表与详情会隐藏OAuth Token。普通轮询显示“凭据已隐藏”，不误报不一致；仅恢复阶段通过官方GET accounts/data?ids=<单账号ID>&include_proxies=false读取凭据，在内存校验身份/并发变化/补授权读回，不落盘导出文件。接口403时停止恢复，不绕过二次验证。实测当前管理员接口可用。
+
+- Sub2API列表默认筛选分组ID2（精确按ID，不依赖分组名称）。在“Sub2API设置→列表显示”编辑默认列表分组ID，支持逗号分隔多选，留空显示全部；启动、重置筛选和修改保存后应用。临时多选不改变默认配置。此字段default_list_group_ids独立于上传group_ids及监控范围。

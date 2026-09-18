@@ -58,6 +58,19 @@ def proxy_candidates(config: dict[str, Any]) -> list[int]:
     return ids
 
 
+def default_list_group_ids(value='2') -> set[int]:
+    parts = value if isinstance(value, list) else str(value or '').replace('，', ',').split(',')
+    result = set()
+    for part in parts:
+        text = str(part).strip()
+        if not text:
+            continue
+        if not text.isascii() or not text.isdigit() or int(text) < 1:
+            raise ValueError('默认列表分组须为正整数ID，多个用逗号分隔；留空显示全部')
+        result.add(int(text))
+    return result
+
+
 def assigned_proxy(record, config, current_proxy=None):
     candidates = proxy_candidates(config)
     endpoint = config.get('api_url', '')

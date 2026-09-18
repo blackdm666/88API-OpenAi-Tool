@@ -9,7 +9,7 @@ from .integrations import (
     fetch_sub2api_proxies,
     fetch_sub2api_accounts,
 )
-from .sub2api_policy import normalize_server_url, upload_options, match_remote, proxy_candidates
+from .sub2api_policy import normalize_server_url, upload_options, match_remote, proxy_candidates, default_list_group_ids
 from .gui_widgets import CheckList
 
 
@@ -32,7 +32,7 @@ class GUISub2APISettingsMixin:
         settings = self.current_settings()
         cfg = deepcopy(settings["integrations"]["sub2api"])
         dialog = tk.Toplevel(self.root)
-        dialog.title("Sub2API · 连接与上传设置")
+        dialog.title("Sub2API · 连接、上传与自动维护设置")
         dialog.geometry("740x600")
         dialog.minsize(660, 570)
         dialog.transient(self.root)
@@ -45,6 +45,22 @@ class GUISub2APISettingsMixin:
         parameters = ttk.Frame(book, padding=14, style="Card.TFrame")
         book.add(connection, text="服务器连接")
         book.add(parameters, text="上传参数")
+        recovery = ttk.Frame(book, padding=14, style='Card.TFrame')
+        book.add(recovery, text='自动维护')
+        display = ttk.Frame(book, padding=14, style='Card.TFrame')
+        book.add(display, text='列表显示')
+        default_groups = tk.StringVar(value=str(cfg.get('default_list_group_ids', '2')))
+        ttk.Label(display, text='默认列表分组 ID', style='Card.TLabel').pack(anchor='w', pady=(8,4))
+        ttk.Entry(display, textvariable=default_groups).pack(fill='x')
+        ttk.Label(display, text='默认 2。多个分组用逗号分隔，留空显示全部。\n\n启动程序、重置筛选时使用；保存修改后立即应用。列表中仍可临时多选其他分组。\n\n仅影响右侧账号列表的默认筛选，不改变上传分组或自动维护的账号范围。', wraplength=560, style='CardSubtle.TLabel').pack(anchor='w', pady=16)
+        reauthorize = tk.BooleanVar(value=bool(cfg.get('auto_reauthorize_401', True)))
+        test_enabled = tk.BooleanVar(value=bool(cfg.get('recovery_test_enabled', True)))
+        test_model = tk.StringVar(value=str(cfg.get('recovery_test_model') or 'gpt-5.5'))
+        ttk.Checkbutton(recovery, text='401 后使用已保存的 2FA 资料自动重新授权', variable=reauthorize).pack(anchor='w', pady=8)
+        ttk.Checkbutton(recovery, text='补授权并核验启用、调度状态后，执行一次 Sub2API 模型测试', variable=test_enabled).pack(anchor='w', pady=8)
+        ttk.Label(recovery, text='测试模型（默认 gpt-5.5）', style='Card.TLabel').pack(anchor='w', pady=(16, 4))
+        ttk.Entry(recovery, textvariable=test_model).pack(fill='x')
+        ttk.Label(recovery, text='仅处理左侧已监控账号；需要先在 2FA 页加密保存资料，再启动自动维护。\n\n恢复流程：核对账号 → 刷新或重新授权 → 校验邮箱及工作区 → 写回原账号 → 检查启用和调度 → 模型测试 → 持续轮询。\n\n模型测试会消耗少量额度，每份新凭据只自动测试一次；不按轮询周期反复测试。主动停用的账号不会自动启用；验证码、登录拦截和身份不一致时等待人工处理。', wraplength=570, style='CardSubtle.TLabel').pack(anchor='w', pady=18)
         connection.columnconfigure(1, weight=1)
         parameters.columnconfigure(1, weight=1)
         book.select(parameters)
@@ -133,6 +149,11 @@ class GUISub2APISettingsMixin:
             ]
             params["auto_pause_on_expired"] = pause.get()
             params['ws_mode'] = WS_MODES[params['ws_mode']]
+            params.update(auto_reauthorize_401=reauthorize.get(), recovery_test_enabled=test_enabled.get(), recovery_test_model=test_model.get().strip())
+            group_ids = default_list_group_ids(default_groups.get())
+            params['default_list_group_ids'] = ','.join(str(i) for i in sorted(group_ids))
+            if not params['recovery_test_model'] or len(params['recovery_test_model']) > 160 or any(c.isspace() for c in params['recovery_test_model']):
+                raise ValueError('请填写有效的测试模型名称')
             if validate:
                 upload_options(params)
             # A changed login or server must not retain another session.
@@ -195,7 +216,10 @@ class GUISub2APISettingsMixin:
             self.sub2api_auth_mode_var.set(
                 updated["integrations"]["sub2api"]["auth_mode"]
             )
-            self.status_var.set("上传参数已保存；手动上传时应用，自动恢复仅更新凭据")
+            if updated['integrations']['sub2api']['default_list_group_ids'] != cfg.get('default_list_group_ids', '2'):
+                self.reset_sub2api_default_groups()
+                self.populate_sub2api_tree()
+            self.status_var.set("Sub2API 配置已保存")
             dialog.destroy()
 
         ttk.Button(parameters, text='多选分组 / 多选代理…', command=load_choices).grid(row=8, column=0, columnspan=2, sticky='ew', pady=6)
@@ -319,7 +343,8 @@ class GUISub2APISettingsMixin:
             "② Sub2API恢复：仅处理左侧手动开启监控、身份唯一匹配的账号。\n"
             "③ 远端error且明确401时刷新OAuth凭据，再写回原账号并校验；普通429与临时停调度交由服务器处理。\n"
             "④ 保留原分组、并发、代理、指纹设置，不删除或新建远端账号。\n"
-            "⑤ 失败按5/10/20分钟退避，最多3次；永久撤销转“需要重新授权”。\n"
-            "⑥ 在授权页完成官方登录并保存到同一邮箱后，下一轮同步新凭据。\n\n"
+            "⑤ 开启自动重新授权后，401不可刷新时使用加密保存的2FA资料登录；身份校验后落盘并补授权。缺资料、登录拦截或身份不符时等待人工。\n"
+            "⑥ 补授权后读回凭据及启用/调度状态，再执行一次Sub2API原生模型测试；模型在Sub2API设置→自动维护中调整。\n"
+            "⑦ 失败5/10/20分钟退避，最多3次；一小时内重新授权最多3次。上传失败只重试上传，不重复登录。主动停用账号不启用。\n\n"
             "停止维护会阻止后续操作；正在进行的网络请求需等待返回。",
         )

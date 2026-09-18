@@ -4,6 +4,7 @@ import threading
 from pathlib import Path
 from copy import deepcopy
 from .maintenance import recovery_cycle
+from .credential_vault import CredentialVault
 
 from tkinter import filedialog, messagebox
 
@@ -15,6 +16,45 @@ from .services import refresh_record
 
 
 class GUIAuthMixin:
+    def update_vault_status(self):
+        try:
+            vault = CredentialVault()
+            count = len(vault.load())
+            self.auth2fa_vault_var.set(f'已加密保存 {count} 个账号 · 文档/OpenAI-Token-Manager/credentials')
+        except Exception as exc:
+            self.auth2fa_vault_var.set(str(exc))
+
+    def save_auth2fa_credentials(self, *, silent=False):
+        accounts, errors = parse_account_lines(self.auth2fa_input.get('1.0', 'end'))
+        if not accounts and not errors:
+            return True
+        try:
+            if errors:
+                raise ValueError('账号资料格式有误，未保存；请检查无效行')
+            count = CredentialVault().save_accounts(accounts)
+            self.update_vault_status()
+            if not silent:
+                self.log(f'2FA 资料已加密保存，共 {count} 个账号')
+            return True
+        except Exception as exc:
+            self.auth2fa_vault_var.set('资料未保存：' + str(exc))
+            self.log('2FA 资料保存失败：' + str(exc), 'error')
+            return False
+
+    def load_auth2fa_credentials(self):
+        if self.is_running() or self.auto_refresh_running:
+            self.log('请先停止维护并等待任务完成，再载入授权资料', 'warning')
+            return
+        try:
+            accounts = CredentialVault().load()
+            text = '\n'.join(f"{a['email']}----{a['password']}----{a['totp_secret']}" for a in accounts.values())
+            self.auth2fa_input.delete('1.0', 'end')
+            self.auth2fa_input.insert('1.0', text)
+            self.update_auth2fa_input_stats()
+            self.update_vault_status()
+        except Exception as exc:
+            self.auth2fa_vault_var.set(str(exc))
+
     def update_auth2fa_mode_hint(self, *, announce: bool = True, persist: bool = True) -> None:
         mode_label = str(self.auth2fa_mode_var.get() or "协议链").strip() or "协议链"
         if mode_label == "浏览器链":
@@ -55,6 +95,7 @@ class GUIAuthMixin:
         self.auth2fa_input.insert("1.0", text)
         self.auth2fa_output_var.set(f"已导入 {selected}")
         self.update_auth2fa_input_stats()
+        self.save_auth2fa_credentials()
         self.log(f"已导入 2FA 账号文件: {selected}")
 
     def clear_auth2fa_accounts_text(self) -> None:
@@ -69,6 +110,9 @@ class GUIAuthMixin:
         self.auth2fa_stats_var.set(f"待授权 {len(accounts)}  无效 {len(errors)}  原始 {line_count}")
 
     def start_auth2fa_batch(self) -> None:
+        if self.is_running() or self.auto_refresh_running:
+            self.log('已有任务或自动维护在运行，未启动新的授权任务', 'warning')
+            return
         raw_text = self.auth2fa_input.get("1.0", "end")
         accounts, errors = parse_account_lines(raw_text)
         if not accounts:
@@ -76,6 +120,8 @@ class GUIAuthMixin:
             self.update_auth2fa_input_stats()
             return
 
+        if not self.save_auth2fa_credentials():
+            return
         self.save_settings(reload_tokens=False, notify=False)
         settings = self.current_settings()
         mode = str(settings.get("auth_2fa_mode") or "protocol").strip().lower()

@@ -28,7 +28,7 @@ class BackgroundJobTest(unittest.TestCase):
                     self.assertEqual(app.is_running(), running)
                 app.log.side_effect = check_unlocked
                 worker, done = Mock(), Mock()
-                with patch('token_manager.gui_common.messagebox.showinfo') as modal, patch('token_manager.gui_common.threading.Thread') as thread:
+                with patch('tkinter.messagebox.showinfo') as modal, patch('token_manager.gui_common.threading.Thread') as thread:
                     for _ in range(3):
                         app.run_background('正在刷新账号', worker, done)
                     modal.assert_not_called()

@@ -6,7 +6,7 @@ import traceback
 from typing import Any
 
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, ttk
 
 from .config import save_app_config
 from .constants import (
@@ -370,6 +370,6 @@ class GUICommonMixin:
         return _progress
 
     def update_ui_timer(self) -> None:
-        if not self.is_running() and not self.token_tree.selection():
+        if not self.is_running():
             self.reload_tokens(save_first=False)
         self.root.after(DEFAULT_UI_REFRESH_MS, self.update_ui_timer)

@@ -227,6 +227,9 @@ class RecoveryTest(Fixture, unittest.TestCase):
         super().setUp()
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
+        self.settings["integrations"]["sub2api"]["auto_reauthorize_401"] = False
+        self.settings["integrations"]["sub2api"]["recovery_test_enabled"] = False
+        self.local["expired"] = "2099-01-01T00:00:00Z"
         self.settings.update(
             tokens_dir=str(Path(self.temp.name) / "tokens"),
             outputs_dir=str(Path(self.temp.name) / "outputs"),
@@ -252,7 +255,7 @@ class RecoveryTest(Fixture, unittest.TestCase):
             ) as refresh,
             patch(
                 "token_manager.maintenance.apply_sub2api_credentials",
-                side_effect=[RuntimeError("network down"), {}],
+                side_effect=[RuntimeError("network down"), {**self.remote, "status":"active", "credentials":{"access_token":"new-access"}}],
             ) as apply,
         ):
             recovery_cycle(self.store, self.settings)
@@ -275,7 +278,7 @@ class RecoveryTest(Fixture, unittest.TestCase):
             ),
             patch("token_manager.maintenance.refresh_record") as refresh,
             patch(
-                "token_manager.maintenance.apply_sub2api_credentials", return_value={}
+                "token_manager.maintenance.apply_sub2api_credentials", return_value={**self.remote, "status":"active", "credentials":{"access_token":"manual-new"}}
             ) as apply,
         ):
             recovery_cycle(self.store, self.settings)

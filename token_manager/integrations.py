@@ -235,6 +235,7 @@ def _sub2api_request(
     api_url = _sub2api_api_url(settings)
     token = _ensure_sub2api_auth(settings, proxy_url=proxy_url) if require_auth else ""
     extra_headers = dict(kwargs.pop("headers", {}) or {})
+    request_timeout = kwargs.pop('timeout', 30)
     retry_headers = dict(kwargs.pop("retry_headers", {}) or {})
     headers = {
         **_sub2api_base_headers(settings, token=token),
@@ -244,7 +245,7 @@ def _sub2api_request(
         method.upper(),
         f"{api_url}{path}",
         headers=headers,
-        timeout=30,
+        timeout=request_timeout,
         verify=True,
         proxies=build_requests_proxies(proxy_url),
         **kwargs,
@@ -277,7 +278,7 @@ def _sub2api_request(
         method.upper(),
         f"{api_url}{path}",
         headers=retry_headers,
-        timeout=30,
+        timeout=request_timeout,
         verify=True,
         proxies=build_requests_proxies(proxy_url),
         **kwargs,
@@ -394,6 +395,7 @@ def fetch_sub2api_accounts(
                     "temp_unschedulable_reason": str(item.get('temp_unschedulable_reason') or ''),
                     "auto_pause_on_expired": bool(item.get("auto_pause_on_expired", False)),
                     "credentials": credentials,
+                    "credentials_status": item.get('credentials_status') or {},
                     "extra": extra,
                     "groups": groups,
                     "proxy": item.get("proxy") or {},
@@ -563,10 +565,39 @@ def get_sub2api_account(settings, account_id, *, proxy_url=''):
     return data
 
 
+def get_sub2api_account_credentials(settings, account_id, *, proxy_url=''):
+    """Use the official ID-scoped export when normal DTOs hide OAuth tokens.
+
+    Exported data stays in memory and never includes proxy credentials.
+    """
+    current = get_sub2api_account(settings, account_id, proxy_url=proxy_url)
+    if (current.get('credentials') or {}).get('access_token'):
+        return current
+    response = _sub2api_request(settings, 'GET', '/api/v1/admin/accounts/data',
+                               proxy_url=proxy_url, params={'ids': str(int(account_id)), 'include_proxies': 'false'})
+    if response.status_code != 200:
+        raise RuntimeError(f'官方凭据读取接口 HTTP {response.status_code}，无法安全核验；请检查导出权限')
+    data = _sub2api_response_data(response)
+    accounts = data.get('accounts', []) if isinstance(data, dict) else []
+    if len(accounts) != 1:
+        raise ValueError('指定账号凭据导出不唯一，停止恢复')
+    exported = accounts[0]
+    # Export records do not carry IDs. The request selects exactly one ID and
+    # its returned owner/workspace must independently match the detail record.
+    identity = {'email': (exported.get('credentials') or {}).get('email') or (exported.get('extra') or {}).get('email') or exported.get('name'),
+                'account_id': (exported.get('credentials') or {}).get('chatgpt_account_id')}
+    if exported.get('platform') != current.get('platform') or exported.get('type') != current.get('type') or not match_remote(identity, [current]):
+        raise ValueError('导出凭据的身份与目标账号不一致')
+    credentials = exported.get('credentials') or {}
+    if not credentials.get('access_token'):
+        raise ValueError('官方导出未返回OAuth凭据，停止恢复')
+    return {**current, 'credentials': credentials}
+
+
 def apply_sub2api_credentials(local, remote, settings, *, proxy_url=''):
     # Re-read just before updating: don't reactivate a manually paused account,
     # overwrite a rotated refresh token, or write to a changed workspace.
-    current = get_sub2api_account(settings, remote['id'], proxy_url=proxy_url)
+    current = get_sub2api_account_credentials(settings, remote['id'], proxy_url=proxy_url)
     if not match_remote(local, [current]) or current.get('status') == 'inactive':
         raise ValueError('账号身份或启用状态已变化，停止同步')
     old_rt = (remote.get('credentials') or {}).get('refresh_token')
@@ -581,7 +612,7 @@ def apply_sub2api_credentials(local, remote, settings, *, proxy_url=''):
     if response.status_code != 200:
         raise RuntimeError(redact_error(_response_error(response)))
     _sub2api_response_data(response)
-    verified = get_sub2api_account(settings, remote['id'], proxy_url=proxy_url)
+    verified = get_sub2api_account_credentials(settings, remote['id'], proxy_url=proxy_url)
     if verified.get('status') != 'active' or (verified.get('credentials') or {}).get('access_token') != local.get('access_token'):
         raise RuntimeError('凭据已提交，但远端读回校验不通过')
     return verified

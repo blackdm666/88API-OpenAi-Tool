@@ -24,7 +24,9 @@ class LayoutTest(unittest.TestCase):
                 with (
                     patch("token_manager.gui.load_app_config", return_value=cfg),
                     patch("token_manager.gui_common.save_app_config"),
+                    patch("token_manager.gui_auth.CredentialVault") as vault,
                 ):
+                    vault.return_value.load.return_value = {}
                     app = TokenManagerGUI(root)
                     root.geometry("1280x800+0+0")
                     root.deiconify()

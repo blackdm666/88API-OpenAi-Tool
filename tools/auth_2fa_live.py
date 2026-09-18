@@ -697,8 +697,10 @@ def authorize_account(
     quiet: bool = False,
     log_fn: Callable[[str], None] | None = None,
     dry_run: bool = False,
+    write_report: bool = True,
 ) -> dict[str, Any]:
-    save_dir = _ensure_dir(save_dir or _default_save_dir())
+    save_dir = _ensure_dir(save_dir or _default_save_dir()) if write_report else None
+    report_writer = _save_report if write_report else lambda **kwargs: ""
     proxy_url = str(settings.get("http_proxy") or "")
     logs: list[dict[str, Any]] = []
     start = generate_oauth_start(settings)
@@ -728,7 +730,7 @@ def authorize_account(
                 include_secrets=include_secrets,
                 log_fn=log_fn,
             )
-            report_path = _save_report(
+            report_path = report_writer(
                 account=account,
                 settings=settings,
                 start=start,
@@ -1028,7 +1030,7 @@ def authorize_account(
             store = TokenStore(settings)
             token_path = str(store.save_token_response(token_data, metadata={"auth_mode": "2fa_live"}))
 
-        report_path = _save_report(
+        report_path = report_writer(
             account=account,
             settings=settings,
             start=start,
@@ -1076,7 +1078,7 @@ def authorize_account(
                 include_secrets=include_secrets,
                 log_fn=log_fn,
             )
-        report_path = _save_report(
+        report_path = report_writer(
             account=account,
             settings=settings,
             start=start,

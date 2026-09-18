@@ -1,6 +1,6 @@
 {
   "name": "OpenAI Token Manager",
-  "version": "2.2.0-88api.9",
+  "version": "2.2.0-88api.10",
   "description": "本地OpenAI账号与Sub2API远端管理工具",
   "author": "Based on Reverse Engineering",
   "license": "Personal Use Only",
@@ -110,6 +110,16 @@
       "date": "2026-09-18",
       "changes": [
         "修复任务忙碌时重复点击刷新造成的弹窗/定时器锁重入死锁，改为非阻塞日志提示"
+      ]
+    },
+    "2.2.0-88api.10": {
+      "date": "2026-09-18",
+      "changes": [
+        "文档目录DPAPI加密保存2FA账号资料",
+        "已监控401账号自动重新授权、原账号补凭据、启用与调度核验",
+        "恢复后Sub2API原生模型测试，默认gpt-5.5，可在Sub2API设置修改",
+        "上传和当前有效状态按远端实际快照展示，失败分阶段退避与持久化",
+        "Sub2API列表默认分组ID2，支持在列表显示设置中修改、多选或留空显示全部"
       ]
     }
   }

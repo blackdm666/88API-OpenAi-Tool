@@ -9,7 +9,7 @@ from tkinter import messagebox, ttk
 from .gui_widgets import CheckList
 from .integrations import fetch_sub2api_usage, fetch_sub2api_accounts
 from .usage_display import snapshot_usage, quota_cell, sort_account_rows
-from .sub2api_policy import normalize_server_url, match_remote
+from .sub2api_policy import normalize_server_url, match_remote, default_list_group_ids
 
 from .services import (
     delete_sub2api_remote_records,
@@ -21,6 +21,11 @@ from .services import (
 
 
 class GUISub2APIMixin:
+    def reset_sub2api_default_groups(self):
+        cfg = (self.config.get('integrations') or {}).get('sub2api') or {}
+        self.sub2api_group_filters.clear()
+        self.sub2api_group_filter_ids = default_list_group_ids(cfg.get('default_list_group_ids', '2'))
+
     def initial_remote_load(self):
         cfg=(self.current_settings().get('integrations') or {}).get('sub2api') or {}
         if cfg.get('api_url') and (cfg.get('api_key') or cfg.get('access_token') or (cfg.get('admin_email') and cfg.get('admin_password'))) and not self.is_running() and not self.auto_refresh_running:
@@ -66,7 +71,7 @@ class GUISub2APIMixin:
     def clear_sub2api_filters(self) -> None:
         self.sub2api_search_var.set("")
         self.sub2api_group_filter_var.set("全部分组")
-        self.sub2api_group_filters.clear()
+        self.reset_sub2api_default_groups()
         self.sub2api_status_filter_var.set("全部状态")
         self.sub2api_type_filter_var.set("oauth")
         self.populate_sub2api_tree()
@@ -90,6 +95,8 @@ class GUISub2APIMixin:
                 group_names = [str(item).strip().lower() for item in (record.get("group_names") or [])]
                 if not selected_groups.intersection(group_names):
                     continue
+            elif self.sub2api_group_filter_ids and not self.sub2api_group_filter_ids.intersection(record.get('group_ids') or []):
+                continue
             if type_filter and type_filter != "全部类型".lower() and type_filter != record_type:
                 continue
             if status_filter == "invalidated" and not is_sub2api_invalidated(record):
@@ -103,7 +110,19 @@ class GUISub2APIMixin:
 
     def _update_sub2api_group_filter_values(self):
         names = sorted(self.sub2api_group_filters)
+        if not names:
+            catalog = self.sub2api_group_catalog()
+            names = [f'{catalog.get(i, "分组")} (#{i})' for i in sorted(self.sub2api_group_filter_ids)]
         self.sub2api_group_filter_var.set('、'.join(names) if names else '全部分组（可多选）')
+
+    def sub2api_group_catalog(self):
+        catalog = {int(g['id']):g['name'] for g in self.sub2api_groups}
+        for record in self.sub2api_records:
+            for group in record.get('groups') or []:
+                catalog.setdefault(int(group['id']), group.get('name') or '分组')
+            for group_id in record.get('group_ids') or []:
+                catalog.setdefault(int(group_id), '分组')
+        return catalog
 
     def choose_sub2api_group_filters(self):
         dialog = tk.Toplevel(self.root)
@@ -111,13 +130,14 @@ class GUISub2APIMixin:
         dialog.geometry('470x380')
         dialog.transient(self.root)
         dialog.grab_set()
-        names = sorted({name for r in self.sub2api_records for name in r.get('group_names', [])})
-        choices = CheckList(dialog, [(name, name) for name in names], self.sub2api_group_filters)
+        catalog = self.sub2api_group_catalog()
+        choices = CheckList(dialog, [(i, f'{name} (#{i})') for i,name in sorted(catalog.items())], self.sub2api_group_filter_ids)
         choices.pack(fill='both', expand=True, padx=16, pady=16)
         buttons = ttk.Frame(dialog, padding=12)
         buttons.pack(fill='x')
         def apply():
-            self.sub2api_group_filters = set(choices.selected())
+            self.sub2api_group_filters.clear()
+            self.sub2api_group_filter_ids = set(choices.selected())
             dialog.destroy()
             self.populate_sub2api_tree()
         ttk.Button(buttons, text='全选', command=choices.select_all).pack(side='left')
