@@ -1,7 +1,7 @@
 <div align="center">
-  <img src="ico/openai.png" alt="OpenAI Token Manager" width="108" height="108">
+  <img src="ico/openai.png" alt="88API号池自动维护工具" width="108" height="108">
 
-  # OpenAI Token Manager
+  # 88API号池自动维护工具
 
   <p>一个面向多账号运维场景的 OpenAI Token 管理工具</p>
 
@@ -127,19 +127,19 @@ python main.py gui
 直接运行：
 
 ```text
-dist/OpenAI-Token-Manager.exe
+dist/88API-号池自动维护工具.exe
 ```
 
 ### 4. 打包主程序
 
 ```bash
-python build.py --name OpenAI-Token-Manager --entry-point main.py
+python build.py --name 88API-号池自动维护工具 --entry-point main.py
 ```
 
 如果想重建产物：
 
 ```bash
-python build.py --clean --name OpenAI-Token-Manager --entry-point main.py
+python build.py --clean --name 88API-号池自动维护工具 --entry-point main.py
 ```
 
 ## 典型使用路径

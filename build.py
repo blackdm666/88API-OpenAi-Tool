@@ -27,11 +27,11 @@ def project_python() -> str:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="OpenAI Token Manager 打包工具")
+    parser = argparse.ArgumentParser(description="88API号池自动维护工具打包工具")
     parser.add_argument("--prepare-only", action="store_true", help="只生成图标和 build.spec，不执行打包")
     parser.add_argument("--clean", action="store_true", help="打包前清理 build/dist")
     parser.add_argument("--console", action="store_true", help="生成带控制台的程序")
-    parser.add_argument("--name", default="OpenAI-Token-Manager", help="输出程序名")
+    parser.add_argument("--name", default="88API-号池自动维护工具", help="输出程序名")
     parser.add_argument("--entry-point", default="main.py", help="打包入口脚本")
     parser.add_argument("--icon-png", default=str(ICON_PNG), help="图标 PNG 路径")
     parser.add_argument("--icon-ico", default=str(ICON_ICO), help="生成或使用的 ICO 路径")

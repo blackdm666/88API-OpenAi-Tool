@@ -8,7 +8,7 @@ from token_manager.gui import run_app
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="OpenAI Token Manager")
+    parser = argparse.ArgumentParser(description="88API号池自动维护工具")
     parser.add_argument("--version", action="version", version=f"v{APP_VERSION}")
     parser.add_argument("command", nargs="?", default="gui", choices=["gui"])
     parser.parse_args()

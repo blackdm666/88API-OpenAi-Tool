@@ -4,8 +4,8 @@ import sys
 from pathlib import Path
 
 
-APP_NAME = "OpenAI Token Manager"
-APP_VERSION = "2.2.0-88api.34"
+APP_NAME = "88API号池自动维护工具"
+APP_VERSION = "2.2.0-88api.35"
 
 DEFAULT_OAUTH_AUTH_URL = "https://auth.openai.com/oauth/authorize"
 DEFAULT_OAUTH_TOKEN_URL = "https://auth.openai.com/oauth/token"
@@ -18,7 +18,7 @@ DEFAULT_CALLBACK_SUCCESS_HTML = """<!doctype html>
 <head><meta charset="utf-8"><title>OAuth Success</title></head>
 <body style="font-family:Segoe UI,Arial,sans-serif;padding:24px;">
 <h2>授权完成</h2>
-<p>可以回到 OpenAI Token Manager 了。</p>
+<p>可以回到 88API号池自动维护工具 了。</p>
 </body>
 </html>
 """
@@ -28,7 +28,7 @@ DEFAULT_CALLBACK_FAILURE_HTML = """<!doctype html>
 <head><meta charset="utf-8"><title>OAuth Failed</title></head>
 <body style="font-family:Segoe UI,Arial,sans-serif;padding:24px;">
 <h2>授权失败</h2>
-<p>回到 OpenAI Token Manager 查看错误信息。</p>
+<p>回到 88API号池自动维护工具 查看错误信息。</p>
 </body>
 </html>
 """

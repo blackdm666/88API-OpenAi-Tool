@@ -112,7 +112,7 @@ class GUIAuthMixin:
         try:
             vault = CredentialVault()
             count = len(vault.load())
-            self.auth2fa_vault_var.set(f'已加密保存 {count} 个账号 · 文档/OpenAI-Token-Manager/credentials')
+            self.auth2fa_vault_var.set(f'已加密保存 {count} 个账号 · 文档/sub2api/outputs')
         except Exception as exc:
             self.auth2fa_vault_var.set(str(exc))
 
