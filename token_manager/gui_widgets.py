@@ -55,13 +55,23 @@ class HoverTooltip:
         tip = tk.Toplevel(self.widget)
         tip.wm_overrideredirect(True)
         tip.attributes('-topmost', True)
-        tip.configure(background='#334155')
+        tip.configure(background='#1e293b')
+        try:
+            tip.attributes('-alpha', 0.98)
+        except tk.TclError:
+            pass
         tk.Label(tip, text=self.text, justify='left', wraplength=340,
-                 background='#334155', foreground='#ffffff', padx=9, pady=6,
+                 background='#1e293b', foreground='#ffffff', padx=10, pady=7,
                  font=('Microsoft YaHei UI', 9)).pack()
         tip.update_idletasks()
         x = self.widget.winfo_rootx() + 8
         y = self.widget.winfo_rooty() + self.widget.winfo_height() + 5
+        screen_width = self.widget.winfo_screenwidth()
+        screen_height = self.widget.winfo_screenheight()
+        tip_width = tip.winfo_width()
+        tip_height = tip.winfo_height()
+        x = min(x, max(0, screen_width - tip_width - 8))
+        y = min(y, max(0, screen_height - tip_height - 8))
         tip.geometry(f'+{x}+{y}')
         self.tip = tip
 
@@ -164,7 +174,7 @@ class UsageTreeview(ttk.Treeview):
                 canvas=self._bar_widgets[used];used+=1
                 canvas.place(x=x+1,y=y+1,width=max(1,w-2),height=max(1,h-2))
                 canvas.delete('all')
-                canvas.configure(background='#d9f0ec' if row in selected else '#ffffff')
+                canvas.configure(background='#e8f0ff' if row in selected else '#ffffff')
                 text=self.set(row,column)
                 try: percent=float(text.rstrip('%')) if text.endswith('%') else None
                 except ValueError: percent=None

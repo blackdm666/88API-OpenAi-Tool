@@ -490,6 +490,22 @@ class GUILayoutMixin:
             bg=self.palette['card'], fg=self.palette['text'], relief='flat',
             insertbackground=self.palette['text'], highlightthickness=1,
             highlightbackground=self.palette['border'], padx=6,pady=5)
+        self.log_text.tag_configure("info", foreground=self.palette["muted"])
+        self.log_text.tag_configure(
+            "success",
+            foreground=self.palette["success"],
+            font=("Consolas", 9, "bold"),
+        )
+        self.log_text.tag_configure(
+            "warning",
+            foreground=self.palette["accent"],
+            font=("Consolas", 9, "bold"),
+        )
+        self.log_text.tag_configure(
+            "error",
+            foreground=self.palette["danger"],
+            font=("Consolas", 9, "bold"),
+        )
         self.log_text.pack(fill=tk.BOTH, expand=True)
         self.clear_log_button=ttk.Button(parent,text='清空日志',command=self.clear_logs,style='Nav.TButton')
         self.clear_log_button.place(relx=1,x=-24,y=4,anchor='ne')

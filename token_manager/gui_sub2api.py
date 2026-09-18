@@ -373,7 +373,7 @@ class GUISub2APIMixin:
             return None
 
     def sort_description(self):
-        labels={'id':'ID','email':'账号名称','groups':'分组','status':'状态','scheduling':'调度','concurrency':'并发','quota7':'7d已用','priority':'优先级','error':'错误'}
+        labels={'id':'ID','email':'账号名称','groups':'账号标签','status':'状态','scheduling':'调度','concurrency':'并发','quota7':'7d已用','priority':'优先级','error':'错误'}
         return labels[self.sub2api_sort_column]+('降序' if self.sub2api_sort_descending else '升序')
 
     def sorted_sub2api_records(self):
@@ -385,7 +385,7 @@ class GUISub2APIMixin:
         else:
             self.sub2api_sort_column=column
             self.sub2api_sort_descending=False
-        labels={'id':'ID','email':'账号名称','groups':'分组','status':'状态','scheduling':'调度','concurrency':'并发','quota7':'7d已用','priority':'优先级','error':'错误摘要'}
+        labels={'id':'ID','email':'账号名称','groups':'账号标签','status':'状态','scheduling':'调度','concurrency':'并发','quota7':'7d已用','priority':'优先级','error':'错误摘要'}
         for key,label in labels.items():
             arrow=(' ↓' if self.sub2api_sort_descending else ' ↑') if key==column else ''
             self.sub2api_tree.heading(key,text=label+arrow)

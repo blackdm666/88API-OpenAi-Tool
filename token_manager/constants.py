@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 APP_NAME = "88API号池自动维护工具"
-APP_VERSION = "2.2.0-88api.39"
+APP_VERSION = "2.2.0-88api.40"
 
 DEFAULT_OAUTH_AUTH_URL = "https://auth.openai.com/oauth/authorize"
 DEFAULT_OAUTH_TOKEN_URL = "https://auth.openai.com/oauth/token"

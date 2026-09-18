@@ -23,18 +23,25 @@ from .sub2api_policy import redact_error
 class GUICommonMixin:
     def _configure_styles(self) -> None:
         self.palette = {
-            "bg": "#f1f5f9",
+            "bg": "#edf3fa",
             "card": "#ffffff",
-            "card_alt": "#f3f7f9",
-            "border": "#d7e1e7",
-            "text": "#203039",
-            "muted": "#647681",
+            "card_alt": "#f6f8fc",
+            "border": "#d9e3ef",
+            "border_strong": "#c6d4e3",
+            "text": "#1f2937",
+            "muted": "#64748b",
             "primary": "#2563eb",
             "primary_hover": "#1d4ed8",
-            "primary_soft": "#d9f0ec",
-            "accent": "#c47a22",
-            "accent_soft": "#e8efff",
-            "status_bg": "#e8efff",
+            "primary_soft": "#e8f0ff",
+            "accent": "#d97706",
+            "accent_soft": "#fff4df",
+            "status_bg": "#e8f0ff",
+            "success": "#0f9f73",
+            "success_soft": "#e7f8f1",
+            "danger": "#dc3f52",
+            "danger_soft": "#ffebef",
+            "info": "#0ea5e9",
+            "info_soft": "#e8f6ff",
         }
         style = ttk.Style()
         try:
@@ -43,8 +50,46 @@ class GUICommonMixin:
             pass
 
         style.layout('Workspace.TNotebook.Tab', [])
-        style.configure('Nav.TButton',padding=(5,4),font=('Microsoft YaHei UI',9),width=0)
-        style.configure('ActiveNav.TButton',padding=(5,4),font=('Microsoft YaHei UI',9,'bold'),width=0,foreground='#2563eb')
+        style.configure(
+            'Nav.TButton',
+            padding=(8, 5),
+            font=('Microsoft YaHei UI', 9),
+            width=0,
+            background=self.palette["card_alt"],
+            foreground=self.palette["muted"],
+            bordercolor=self.palette["border"],
+        )
+        style.map(
+            'Nav.TButton',
+            background=[
+                ('active', self.palette["primary_soft"]),
+                ('pressed', self.palette["primary_soft"]),
+            ],
+            foreground=[
+                ('active', self.palette["primary"]),
+                ('pressed', self.palette["primary"]),
+            ],
+        )
+        style.configure(
+            'ActiveNav.TButton',
+            padding=(8, 5),
+            font=('Microsoft YaHei UI', 9, 'bold'),
+            width=0,
+            background=self.palette["primary_soft"],
+            foreground=self.palette["primary"],
+            bordercolor=self.palette["primary"],
+        )
+        style.map(
+            'ActiveNav.TButton',
+            background=[
+                ('active', self.palette["primary_soft"]),
+                ('pressed', self.palette["primary_soft"]),
+            ],
+            foreground=[
+                ('active', self.palette["primary_hover"]),
+                ('pressed', self.palette["primary_hover"]),
+            ],
+        )
         base_font = ("Microsoft YaHei UI", 10)
         bold_font = ("Microsoft YaHei UI", 10, "bold")
         hero_font = ("Microsoft YaHei UI", 21, "bold")
@@ -101,7 +146,7 @@ class GUICommonMixin:
         )
         style.configure(
             "TButton",
-            padding=(9, 5),
+            padding=(10, 6),
             background=self.palette["card_alt"],
             foreground=self.palette["text"],
             bordercolor=self.palette["border"],
@@ -110,12 +155,12 @@ class GUICommonMixin:
         )
         style.map(
             "TButton",
-            background=[("active", self.palette["accent_soft"]), ("pressed", self.palette["accent_soft"])],
-            foreground=[("active", self.palette["text"])],
+            background=[("active", self.palette["primary_soft"]), ("pressed", self.palette["primary_soft"])],
+            foreground=[("active", self.palette["primary"]), ("pressed", self.palette["primary"])],
         )
         style.configure(
             "Primary.TButton",
-            padding=(9, 5),
+            padding=(10, 6),
             font=bold_font,
             background=self.palette["primary"],
             foreground="#ffffff",
@@ -133,6 +178,7 @@ class GUICommonMixin:
         style.configure("SubHero.TLabel", font=base_font, foreground=self.palette["muted"], background=self.palette["card"])
         style.configure(
             "TEntry",
+            padding=(7, 5),
             fieldbackground=self.palette["card"],
             foreground=self.palette["text"],
             bordercolor=self.palette["border"],
@@ -142,6 +188,7 @@ class GUICommonMixin:
         )
         style.configure(
             "TCombobox",
+            padding=(6, 4),
             fieldbackground=self.palette["card"],
             background=self.palette["card"],
             foreground=self.palette["text"],
@@ -160,12 +207,14 @@ class GUICommonMixin:
         self.root.option_add('*TCombobox*Listbox.font', base_font)
         style.configure(
             "Treeview",
-            rowheight=29,
+            rowheight=31,
             font=base_font,
             background=self.palette["card"],
             fieldbackground=self.palette["card"],
             foreground=self.palette["text"],
             bordercolor=self.palette["border"],
+            borderwidth=0,
+            relief="flat",
         )
         style.configure(
             "Treeview.Heading",
@@ -173,6 +222,8 @@ class GUICommonMixin:
             background=self.palette["card_alt"],
             foreground=self.palette["text"],
             bordercolor=self.palette["border"],
+            padding=(8, 7),
+            relief="flat",
         )
         style.map(
             "Treeview",
@@ -220,7 +271,9 @@ class GUICommonMixin:
     def poll_logs(self) -> None:
         for event in self.log_bus.drain():
             ts = time.strftime("%H:%M:%S", time.localtime(event.created_at))
-            self.log_text.insert(tk.END, f"[{ts}] {event.message}\n")
+            level = event.level if event.level in {"info", "success", "warning", "error"} else "info"
+            marker = {"info": "●", "success": "✓", "warning": "▲", "error": "✕"}[level]
+            self.log_text.insert(tk.END, f"[{ts}] {marker} {event.message}\n", level)
             self.log_text.see(tk.END)
         self.root.after(DEFAULT_LOG_POLL_MS, self.poll_logs)
 
