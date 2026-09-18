@@ -60,7 +60,7 @@ class WorkflowTest(unittest.TestCase):
     def test_uploaded_account_is_auto_enrolled_without_monitor_toggle(self):
         local = self.store.load_all()[0]
         local['sub2api_recovery'] = {}
-        local['uploads'] = {'sub2api': {'ok': True}}
+        local['uploads'] = {}
         self.store.save_record(local, filename=local.get('_filename'))
         result = recovery_cycle(self.store, self.settings)
         self.assertEqual(result['recovered'], 1)

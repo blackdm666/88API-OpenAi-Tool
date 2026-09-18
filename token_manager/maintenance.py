@@ -49,10 +49,7 @@ def recovery_cycle(store, settings, *, log_fn=None, cancelled=lambda: False):
     if cfg.get('auto_monitor_uploaded_accounts', True):
         for record in all_locals:
             enrollment = dict(record.get('sub2api_recovery') or {})
-            if enrollment.get('enabled') or enrollment.get('manual_disabled'):
-                continue
-            upload_state = (record.get('uploads') or {}).get('sub2api') or {}
-            if not upload_state.get('ok'):
+            if enrollment.get('enabled') or enrollment.get('manual_disabled') or enrollment.get('enabled') is False:
                 continue
             try:
                 remote = match_remote({**record, 'sub2api_recovery': {}}, remotes)
@@ -60,8 +57,10 @@ def recovery_cycle(store, settings, *, log_fn=None, cancelled=lambda: False):
                 remote = None
             if not remote:
                 continue
+            upload_state = (record.get('uploads') or {}).get('sub2api') or {}
+            message = '已根据上传记录自动纳入维护' if upload_state.get('ok') else '已根据唯一远端账号匹配自动纳入维护'
             enrollment.update(enabled=True, auto_enrolled=True, server=server,
-                              remote_id=remote['id'], status='待检查', message='已根据上传记录自动纳入维护')
+                              remote_id=remote['id'], status='待检查', message=message)
             record['sub2api_recovery'] = enrollment
             store.save_record(record, filename=record.get('_filename'))
             locals_.append(record)
