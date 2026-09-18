@@ -345,7 +345,7 @@ class GUILayoutMixin:
         filters = ttk.Frame(parent, style='Card.TFrame')
         filters.grid(row=1,column=0,sticky='ew',pady=(0,8))
         for col in range(4): filters.columnconfigure(col,weight=1,uniform='filter')
-        fields = [('搜索',self.sub2api_search_var),('分组',None),('状态',self.sub2api_status_filter_var),('类型',self.sub2api_type_filter_var)]
+        fields = [('分组',None),('搜索',self.sub2api_search_var),('状态',self.sub2api_status_filter_var),('类型',self.sub2api_type_filter_var)]
         for col,(label,var) in enumerate(fields):
             cell=ttk.Frame(filters,style='Card.TFrame')
             cell.grid(row=0,column=col,sticky='ew',padx=(0,6))

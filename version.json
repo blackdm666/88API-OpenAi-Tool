@@ -1,6 +1,6 @@
 {
   "name": "OpenAI Token Manager",
-  "version": "2.2.0-88api.6",
+  "version": "2.2.0-88api.7",
   "description": "本地OpenAI账号与Sub2API远端管理工具",
   "author": "Based on Reverse Engineering",
   "license": "Personal Use Only",
@@ -88,6 +88,12 @@
         "OAuth默认筛选和Sub2API默认名称排序",
         "两侧显示5h/7d已用比例、手动批量更新用量与窗口明细",
         "右侧工具栏整理并移除冗余详情与嵌套列表页签"
+      ]
+    },
+    "2.2.0-88api.7": {
+      "date": "2026-09-18",
+      "changes": [
+        "筛选顺序调整为分组、搜索、状态、类型"
       ]
     }
   }
