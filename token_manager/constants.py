@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 APP_NAME = "OpenAI Token Manager"
-APP_VERSION = "2.2.0-88api.24"
+APP_VERSION = "2.2.0-88api.25"
 
 DEFAULT_OAUTH_AUTH_URL = "https://auth.openai.com/oauth/authorize"
 DEFAULT_OAUTH_TOKEN_URL = "https://auth.openai.com/oauth/token"

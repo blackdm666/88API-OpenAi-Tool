@@ -92,10 +92,10 @@ def scheduling_cell(record, *, now=None):
         expiry = parse_time(expiry)
     if record.get('auto_pause_on_expired') and expiry and expiry <= current:
         return '开启·已到期'
-    for field, label in [('temp_unschedulable_until','临时冷却'), ('rate_limit_reset_at','限流冷却'), ('overload_until','过载冷却')]:
+    for field, label in [('temp_unschedulable_until','临时冷却'), ('rate_limit_reset_at','限流中'), ('overload_until','过载冷却')]:
         until = parse_time(record.get(field))
         if until and until > current:
-            return '开启·' + label
+            return label if field == 'rate_limit_reset_at' else '开启·' + label
     return '参与调度'
 
 
