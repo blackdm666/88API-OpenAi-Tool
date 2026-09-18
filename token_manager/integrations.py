@@ -381,6 +381,9 @@ def fetch_sub2api_accounts(
                     "group_ids": [safe_int(group_id) for group_id in group_ids if safe_int(group_id) > 0],
                     "group_names": group_names,
                     "concurrency": safe_int(item.get("concurrency")),
+                    "current_concurrency": item.get("current_concurrency"),
+                    "active_sessions": item.get("active_sessions"),
+                    "current_rpm": item.get("current_rpm"),
                     "priority": safe_int(item.get("priority")),
                     "rate_multiplier": item.get('rate_multiplier', 1),
                     "parent_account_id": item.get('parent_account_id'),
@@ -402,6 +405,41 @@ def fetch_sub2api_accounts(
                     "proxy": item.get("proxy") or {},
                 }
             )
+        page += 1
+    return records
+
+
+def fetch_sub2api_concurrency_snapshot(
+    settings: dict[str, Any], *, proxy_url: str = "", filters: dict[str, Any] | None = None,
+    page_size: int = 100,
+) -> list[dict[str, Any]]:
+    """Read the lightweight live concurrency counters from Sub2API."""
+    query_filters = {key: value for key, value in dict(filters or {}).items() if str(value or "").strip()}
+    page, pages, records = 1, 1, []
+    while page <= pages:
+        response = _sub2api_request(
+            settings, "GET", "/api/v1/admin/accounts", proxy_url=proxy_url,
+            params={"page": page, "page_size": page_size, "lite": "1", "sort_by": "id", "sort_order": "asc", **query_filters},
+        )
+        if response.status_code != 200:
+            raise RuntimeError(_response_error(response))
+        data = _sub2api_response_data(response)
+        items = data.get("items") if isinstance(data, dict) else []
+        pages = max(1, int(data.get("pages") or ((int(data.get("total") or 0) + page_size - 1) // page_size) or 1)) if isinstance(data, dict) else 1
+        for item in items if isinstance(items, list) else []:
+            if isinstance(item, dict):
+                records.append({
+                    "id": safe_int(item.get("id")),
+                    "status": str(item.get("status") or "").strip(),
+                    "schedulable": item.get("schedulable"),
+                    "concurrency": safe_int(item.get("concurrency")),
+                    "current_concurrency": item.get("current_concurrency"),
+                    "active_sessions": item.get("active_sessions"),
+                    "current_rpm": item.get("current_rpm"),
+                    "temp_unschedulable_until": str(item.get("temp_unschedulable_until") or "").strip(),
+                    "rate_limit_reset_at": str(item.get("rate_limit_reset_at") or "").strip(),
+                    "overload_until": str(item.get("overload_until") or "").strip(),
+                })
         page += 1
     return records
 

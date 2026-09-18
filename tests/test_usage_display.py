@@ -2,13 +2,29 @@ import unittest
 from datetime import datetime, timezone
 from unittest.mock import patch
 
-from token_manager.usage_display import quota_cell, snapshot_usage, usage_details, sort_account_rows, scheduling_cell
+from token_manager.usage_display import quota_cell, snapshot_usage, usage_details, sort_account_rows, scheduling_cell, concurrency_cell
+from token_manager.utils import openai_plan_label
 from token_manager.integrations import fetch_sub2api_accounts, fetch_sub2api_usage
 from token_manager.config import default_config
 from test_sub2api import response
 
 
 class UsageTest(unittest.TestCase):
+    def test_openai_labels_follow_sub2api_plan_type_names(self):
+        cases = {
+            'plus': 'Plus', 'pro': 'Pro 20x', 'chatgpt_pro': 'Pro 20x',
+            'prolite': 'Pro 5x', 'team': 'Business Standard',
+            'self_serve_business_prolite': 'Business Premium', 'free': 'Free',
+            'enterprise': 'Enterprise', 'other-plan': 'Unknown',
+        }
+        for value, expected in cases.items():
+            self.assertEqual(openai_plan_label(value), expected)
+
+    def test_concurrency_cell_preserves_current_and_limit(self):
+        self.assertEqual(concurrency_cell({'current_concurrency': 3, 'concurrency': 10}), '3 / 10')
+        self.assertEqual(concurrency_cell({'current_concurrency': 0, 'concurrency': 100}), '0 / 100')
+        self.assertEqual(concurrency_cell({'current_concurrency': None, 'concurrency': 10}), '暂无')
+
     def test_scheduling_distinguishes_switch_activation_and_cooldown(self):
         now = datetime(2026, 9, 18, tzinfo=timezone.utc)
         cases = [

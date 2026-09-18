@@ -33,3 +33,5 @@
 - 2.2.0-88api.12：自动维护默认纳入已有Sub2API成功上传且唯一匹配的本地账号，不再要求先点击监控选中；“取消监控”写入manual_disabled，保持人工排除。恢复或检查active账号时，若schedulable=false且auto_enable_schedulable开启，调用官方POST /accounts/:id/schedulable true并读取确认，再进行模型测试。调度未知不当作参与调度。
 
 - 2.2.0-88api.13：Sub2API账号操作菜单只提供“启用调度/停用调度”，调用官方POST /accounts/:id/schedulable；不再使用bulk-update status。status=active/inactive仅由账号状态操作或服务端返回决定。核对#333、#342时官方列表与详情均为active、schedulable=true、无冷却。
+
+- 2.2.0-88api.14：右侧Sub2API列表使用官方accounts?lite=1读取current_concurrency和concurrency，每5秒同步；current_concurrency是当前请求占用计数，不等同active_sessions（OpenAI通常为空）。额度展示移除5h，仅保留7d。左侧身份标签按Sub2API plan_type：Plus、Pro 20x、Pro 5x、Business Standard、Business Premium、Free、Enterprise、Unknown。

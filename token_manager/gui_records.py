@@ -9,6 +9,7 @@ from tkinter import filedialog, messagebox
 from .integrations import sub2api_upload_payload
 from .usage_display import quota_cell
 from .recovery_support import remote_health
+from .utils import openai_plan_label
 from .sub2api_policy import auth_failure_kind
 from .converters import from_local_payload, from_sub2api_payload
 from .services import export_organized_payloads, refresh_record, run_batch, sync_subscription, upload_record
@@ -53,7 +54,6 @@ class GUIRecordsMixin:
                 values=(
                     record.get("email", "Unknown"),
                     self.plan_label(record),
-                    quota_cell(usage,"five_hour"),
                     quota_cell(usage,"seven_day"),
                     status,
                     record["_remaining_text"],
@@ -110,23 +110,12 @@ class GUIRecordsMixin:
         return filtered
 
     def update_stats(self, all_records: list[dict[str, object]], visible_records: list[dict[str, object]]) -> None:
-        totals = {
-            "all": len(all_records),
-            "visible": len(visible_records),
-            "team": 0,
-            "plus": 0,
-            "free": 0,
-            "pro": 0,
-            "other": 0,
-        }
+        labels = ['Plus', 'Pro 20x', 'Pro 5x', 'Business Standard', 'Business Premium', 'Free', 'Enterprise', 'Unknown']
+        totals = {label: 0 for label in labels}
         for record in all_records:
-            plan = str(record.get("_plan") or "unknown").strip().lower()
-            if plan in {"team", "plus", "free", "pro"}:
-                totals[plan] += 1
-            else:
-                totals["other"] += 1
-        counts=[f"全部 {totals['all']}",f"当前 {totals['visible']}"]
-        counts.extend(f'{label} {totals[key]}' for key,label in [('team','Team'),('plus','Plus'),('pro','Pro'),('free','Free'),('other','其他')] if totals[key])
+            totals[self.plan_label(record)] = totals.get(self.plan_label(record), 0) + 1
+        counts=[f"全部 {len(all_records)}",f"当前 {len(visible_records)}"]
+        counts.extend(f'{label} {totals[label]}' for label in labels if totals[label])
         self.stats_var.set(' · '.join(counts))
 
     def organize_output_dirs(self) -> None:
@@ -198,16 +187,8 @@ class GUIRecordsMixin:
         return ('历史 ' + " ".join(parts)) if parts else '未核验'
 
     def plan_label(self, record: dict[str, object]) -> str:
-        plan = str(record.get("_plan") or "unknown").strip().lower()
-        mapping = {
-            "team": "Team",
-            "plus": "Plus",
-            "free": "Free",
-            "pro": "Pro",
-            "enterprise": "Enterprise",
-            "unknown": "Unknown",
-        }
-        return mapping.get(plan, plan.title() or "Unknown")
+        subscription = record.get('subscription') or {}
+        return openai_plan_label(subscription.get('plan_type') or record.get('_plan'))
 
     def selected_records(self) -> list[dict[str, object]]:
         selected = set(self.token_tree.selection())

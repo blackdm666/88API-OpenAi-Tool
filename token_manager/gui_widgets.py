@@ -79,7 +79,7 @@ class UsageTreeview(ttk.Treeview):
         selected=set(self.selection())
         used=0
         for row in self.get_children():
-            for column in ('quota5','quota7'):
+            for column in ('quota7',):
                 box=self.bbox(row,column)
                 if not box: continue
                 x,y,w,h=box

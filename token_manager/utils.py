@@ -115,6 +115,22 @@ def normalize_plan(plan: str) -> str:
     return raw
 
 
+def openai_plan_label(plan: str) -> str:
+    """Match Sub2API's current OpenAI plan_type display names."""
+    normalized = re.sub(r"[\s_-]+", "", str(plan or "").strip().lower())
+    mapping = {
+        "plus": "Plus",
+        "pro": "Pro 20x",
+        "chatgptpro": "Pro 20x",
+        "prolite": "Pro 5x",
+        "selfservebusinessprolite": "Business Premium",
+        "team": "Business Standard",
+        "free": "Free",
+        "enterprise": "Enterprise",
+    }
+    return mapping.get(normalized, "Unknown")
+
+
 def plan_directory_name(plan: str) -> str:
     normalized = normalize_plan(plan)
     mapping = {
@@ -149,6 +165,7 @@ def derive_subscription(access_token: str, id_token: str, existing: dict[str, An
     workspace_plan = existing.get("workspace_plan_type", "")
     return {
         "plan": normalize_plan(str(plan)),
+        "plan_type": str(plan or "").strip(),
         "workspace_plan_type": str(workspace_plan or ""),
         "subscription_active_until": str(active_until or ""),
         "checked_at": str(existing.get("checked_at") or now_rfc3339()),

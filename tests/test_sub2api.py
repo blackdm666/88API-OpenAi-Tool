@@ -7,6 +7,7 @@ from unittest.mock import patch, Mock
 from token_manager.config import default_config
 from token_manager.store import TokenStore
 from token_manager import integrations as api
+from token_manager.integrations import fetch_sub2api_concurrency_snapshot
 from token_manager.maintenance import recovery_cycle
 from token_manager.services import set_sub2api_remote_records_schedulable
 from token_manager.sub2api_policy import (
@@ -58,6 +59,12 @@ class Fixture:
 
 
 class Sub2APITest(Fixture, unittest.TestCase):
+    def test_concurrency_snapshot_uses_lite_list_fields(self):
+        payload = {'items': [{'id': 333, 'status': 'active', 'schedulable': True, 'concurrency': 100, 'current_concurrency': 4, 'active_sessions': None}], 'total': 1, 'pages': 1}
+        with patch('token_manager.integrations._sub2api_request', return_value=response(payload)) as request:
+            rows = fetch_sub2api_concurrency_snapshot(self.settings)
+        self.assertEqual(rows[0]['current_concurrency'], 4)
+        self.assertEqual(request.call_args.kwargs['params']['lite'], '1')
     def test_schedulable_action_does_not_update_account_status(self):
         with patch('token_manager.services.set_sub2api_schedulable', side_effect=lambda settings, account_id, enabled, proxy_url='': {"id": account_id, "status": "active", "schedulable": enabled}) as setter:
             result = set_sub2api_remote_records_schedulable(

@@ -99,6 +99,17 @@ def scheduling_cell(record, *, now=None):
     return '参与调度'
 
 
+def concurrency_cell(record):
+    current = record.get('current_concurrency')
+    limit = record.get('concurrency')
+    if current is None or limit in (None, 0):
+        return '暂无'
+    try:
+        return f'{int(current)} / {int(limit)}'
+    except (TypeError, ValueError):
+        return '暂无'
+
+
 def sort_account_rows(records, column='id', descending=False, usage_reader=snapshot_usage):
     known, missing = [], []
     for record in records:
@@ -109,6 +120,9 @@ def sort_account_rows(records, column='id', descending=False, usage_reader=snaps
         elif column == 'email': value=str(record.get('name') or record.get('email') or '').casefold()
         elif column == 'groups': value=', '.join(record.get('group_names') or []).casefold()
         elif column == 'scheduling': value=scheduling_cell(record)
+        elif column == 'concurrency':
+            try: value = int(record.get('current_concurrency'))
+            except (TypeError, ValueError): value = None
         elif column == 'error': value=str(record.get('error_message') or '').casefold()
         else: value=str(record.get(column) or '').casefold()
         (missing if value is None else known).append((value,record))

@@ -7,8 +7,8 @@ import time
 import tkinter as tk
 from tkinter import messagebox, ttk
 from .gui_widgets import CheckList
-from .integrations import fetch_sub2api_usage, fetch_sub2api_accounts
-from .usage_display import snapshot_usage, quota_cell, sort_account_rows, scheduling_cell
+from .integrations import fetch_sub2api_usage, fetch_sub2api_accounts, fetch_sub2api_concurrency_snapshot
+from .usage_display import snapshot_usage, quota_cell, sort_account_rows, scheduling_cell, concurrency_cell
 from .sub2api_policy import normalize_server_url, match_remote, default_list_group_ids
 
 from .services import (
@@ -41,6 +41,48 @@ class GUISub2APIMixin:
         self.usage_sync_var.set("服务器快照 · 同步 " + time.strftime("%H:%M:%S") + " · 每60秒")
         self.sub2api_index = self._build_sub2api_email_index(records)
         self.populate_sub2api_tree()
+
+    def update_concurrency_snapshot(self, records):
+        by_id = {record.get('id'): record for record in records}
+        for record in self.sub2api_records:
+            live = by_id.get(record.get('id'))
+            if live:
+                for key in ('status', 'schedulable', 'concurrency', 'current_concurrency', 'active_sessions', 'current_rpm', 'temp_unschedulable_until', 'rate_limit_reset_at', 'overload_until'):
+                    if key in live:
+                        record[key] = live[key]
+        self.sub2api_concurrency_updated_at = time.time()
+        self.usage_sync_var.set('服务器快照 · 用量60秒 · 并发5秒 · 同步 ' + time.strftime('%H:%M:%S'))
+        self.populate_sub2api_tree()
+
+    def poll_sub2api_concurrency(self):
+        self.root.after(5000, self.poll_sub2api_concurrency)
+        if self.is_running() or self.auto_refresh_running or self._concurrency_inflight or not self.sub2api_records:
+            return
+        settings = self.current_settings()
+        try:
+            server = normalize_server_url(settings['integrations']['sub2api']['api_url'])
+        except ValueError:
+            return
+        if server != self.sub2api_snapshot_server:
+            return
+        self._concurrency_inflight = True
+        def work():
+            try:
+                records = fetch_sub2api_concurrency_snapshot(settings, proxy_url=settings.get('http_proxy', ''), filters={'platform': 'openai'})
+                error = None
+            except Exception as exc:
+                records, error = [], exc
+            def done():
+                self._concurrency_inflight = False
+                if error is not None:
+                    self.usage_sync_var.set('服务器快照 · 并发同步失败，保留上次数据')
+                    return
+                self.update_concurrency_snapshot(records)
+            try:
+                self.root.after(0, done)
+            except (RuntimeError, tk.TclError):
+                pass
+        threading.Thread(target=work, daemon=True).start()
 
     def _sub2api_error_summary(self, record: dict[str, Any], max_len: int = 96) -> str:
         raw = str(record.get("error_message") or "").strip().replace("\r", " ").replace("\n", " ")
@@ -192,7 +234,7 @@ class GUISub2APIMixin:
                     self._sub2api_groups_text(record),
                     record.get("status", ""),
                     scheduling_cell(record),
-                    quota_cell(self.usage_for_record(record),"five_hour"),
+                    concurrency_cell(record),
                     quota_cell(self.usage_for_record(record),"seven_day"),
                     self._sub2api_error_summary(record),
                 ),
@@ -277,7 +319,7 @@ class GUISub2APIMixin:
             return None
 
     def sort_description(self):
-        labels={'id':'ID','email':'账号名称','groups':'分组','status':'状态','scheduling':'调度','quota5':'5h已用','quota7':'7d已用','error':'错误'}
+        labels={'id':'ID','email':'账号名称','groups':'分组','status':'状态','scheduling':'调度','concurrency':'并发','quota7':'7d已用','error':'错误'}
         return labels[self.sub2api_sort_column]+('降序' if self.sub2api_sort_descending else '升序')
 
     def sorted_sub2api_records(self):
@@ -289,7 +331,7 @@ class GUISub2APIMixin:
         else:
             self.sub2api_sort_column=column
             self.sub2api_sort_descending=False
-        labels={'id':'ID','email':'账号名称','groups':'分组','status':'状态','scheduling':'调度','quota5':'5h已用','quota7':'7d已用','error':'错误摘要'}
+        labels={'id':'ID','email':'账号名称','groups':'分组','status':'状态','scheduling':'调度','concurrency':'并发','quota7':'7d已用','error':'错误摘要'}
         for key,label in labels.items():
             arrow=(' ↓' if self.sub2api_sort_descending else ' ↑') if key==column else ''
             self.sub2api_tree.heading(key,text=label+arrow)

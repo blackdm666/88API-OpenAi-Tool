@@ -98,6 +98,8 @@ class TokenManagerGUI(
         self.sub2api_sort_column = 'id'
         self.sub2api_sort_descending = False
         self._snapshot_inflight = False
+        self._concurrency_inflight = False
+        self.sub2api_concurrency_updated_at = 0.0
         self.sub2api_snapshot_server = ""
         self.sub2api_group_filters = set()
         self.sub2api_group_filter_ids = set()
@@ -169,6 +171,7 @@ class TokenManagerGUI(
         self.poll_logs()
         self.update_ui_timer()
         self.root.after(60000, self.poll_remote_snapshot)
+        self.root.after(5000, self.poll_sub2api_concurrency)
         self.root.after(800, self.initial_remote_load)
         self.status_var.trace_add('write', lambda *_: self.log(self.status_var.get()))
         self.root.protocol('WM_DELETE_WINDOW', self.request_close)
