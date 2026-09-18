@@ -282,12 +282,25 @@ class GUILayoutMixin:
         for column in range(6):
             controls.columnconfigure(column, weight=1)
         ttk.Label(controls, text="预览格式", style="Card.TLabel").grid(row=0, column=0, sticky="w", padx=3, pady=3)
-        ttk.Label(controls, text="Sub2API", style="Card.TLabel").grid(row=0, column=1, sticky="ew", padx=3, pady=3)
-        ttk.Button(controls, text="生成预览", command=self.build_preview_from_var).grid(row=0, column=2, sticky="ew", padx=3, pady=3)
-        ttk.Button(controls, text="复制预览", command=self.copy_preview).grid(row=0, column=3, sticky="ew", padx=3, pady=3)
-        ttk.Label(controls, text="Sub2API", style="Card.TLabel").grid(row=0, column=4, sticky="ew", padx=3, pady=3)
-        ttk.Button(controls, text="导入剪贴板", command=self.import_from_clipboard).grid(row=0, column=5, sticky="ew", padx=3, pady=3)
-        ttk.Button(controls, text="导入文件", command=self.import_from_file).grid(row=1, column=5, sticky="ew", padx=3, pady=3)
+        ttk.Combobox(
+            controls,
+            textvariable=self.preview_format_var,
+            values=("Sub2API",),
+            state="readonly",
+            width=12,
+        ).grid(row=0, column=1, sticky="ew", padx=3, pady=3)
+        for column, (label, command) in enumerate(
+            (
+                ("生成预览", self.build_preview_from_var),
+                ("复制预览", self.copy_preview),
+                ("导入剪贴板", self.import_from_clipboard),
+                ("导入文件", self.import_from_file),
+            ),
+            start=2,
+        ):
+            ttk.Button(controls, text=label, command=command).grid(
+                row=0, column=column, sticky="ew", padx=3, pady=3
+            )
 
         preview_card = ttk.Frame(parent, style="Card.TFrame")
         preview_card.grid(row=1, column=0, sticky="nsew")

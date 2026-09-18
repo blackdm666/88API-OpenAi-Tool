@@ -7,7 +7,11 @@ from unittest.mock import patch, Mock
 from token_manager.config import default_config
 from token_manager.store import TokenStore
 from token_manager import integrations as api
-from token_manager.integrations import fetch_sub2api_concurrency_snapshot, fetch_sub2api_proxy_endpoints
+from token_manager.integrations import (
+    bulk_update_sub2api_accounts,
+    fetch_sub2api_concurrency_snapshot,
+    fetch_sub2api_proxy_endpoints,
+)
 from token_manager.maintenance import recovery_cycle
 from token_manager.services import set_sub2api_remote_records_schedulable
 from token_manager.sub2api_policy import (
@@ -59,6 +63,23 @@ class Fixture:
 
 
 class Sub2APITest(Fixture, unittest.TestCase):
+    def test_bulk_update_sends_only_selected_account_ids_and_fields(self):
+        with patch(
+            "token_manager.integrations._sub2api_request",
+            return_value=response({"updated": 2}),
+        ) as request:
+            result = bulk_update_sub2api_accounts(
+                self.settings,
+                [333, 342],
+                {"concurrency": 80, "priority": 2},
+            )
+        self.assertEqual(result["updated"], 2)
+        self.assertEqual(request.call_args.kwargs["json"], {
+            "account_ids": [333, 342],
+            "concurrency": 80,
+            "priority": 2,
+        })
+
     def test_concurrency_snapshot_uses_lite_list_fields(self):
         payload = {'items': [{'id': 333, 'status': 'active', 'schedulable': True, 'concurrency': 100, 'current_concurrency': 4, 'active_sessions': None}], 'total': 1, 'pages': 1}
         with patch('token_manager.integrations._sub2api_request', return_value=response(payload)) as request:
