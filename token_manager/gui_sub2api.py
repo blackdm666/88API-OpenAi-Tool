@@ -341,7 +341,11 @@ class GUISub2APIMixin:
 
     def local_remote_record(self, record):
         try:
-            return match_remote(record, self.sub2api_records)
+            # A Sub2API row may be recreated with a new numeric ID. For
+            # display, follow it only when the old bound row is gone and the
+            # stable OAuth workspace identity still matches. The maintenance
+            # loop persists the new binding after its full safety checks.
+            return match_remote(record, self.sub2api_records, allow_rebind=True)
         except ValueError:
             return None
 

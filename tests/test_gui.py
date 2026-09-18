@@ -46,6 +46,16 @@ class LayoutTest(unittest.TestCase):
                         }
                         for i in range(16)
                     ]
+                    recreated_local = {
+                        'email': 'account0@example.test',
+                        'account_id': 'workspace-0',
+                        'sub2api_recovery': {'remote_id': 999},
+                    }
+                    app.sub2api_records[0]['credentials'] = {
+                        'email': 'account0@example.test',
+                        'chatgpt_account_id': 'workspace-0',
+                    }
+                    self.assertEqual(app.local_remote_record(recreated_local)['id'], 1)
                     app.populate_sub2api_tree()
                     root.update_idletasks()
                     self.assertEqual(len(app.sub2api_tree.get_children()), 16)
