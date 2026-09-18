@@ -4,6 +4,62 @@ import tkinter as tk
 from tkinter import ttk
 
 
+class HoverTooltip:
+    """Delayed help bubble for compact toolbar buttons."""
+    def __init__(self, widget, text, *, delay=450):
+        self.widget, self.text, self.delay = widget, str(text), delay
+        self.tip = None
+        self.job = None
+        widget.bind('<Enter>', self._enter, add='+')
+        widget.bind('<Leave>', self._leave, add='+')
+        widget.bind('<Destroy>', self._destroy, add='+')
+
+    def _enter(self, _event=None):
+        self._cancel()
+        self.job = self.widget.after(self.delay, self._show)
+
+    def _leave(self, _event=None):
+        self._cancel()
+        self._hide()
+
+    def _cancel(self):
+        if self.job is not None:
+            try:
+                self.widget.after_cancel(self.job)
+            except tk.TclError:
+                pass
+            self.job = None
+
+    def _show(self):
+        self.job = None
+        if self.tip is not None or not self.widget.winfo_exists():
+            return
+        tip = tk.Toplevel(self.widget)
+        tip.wm_overrideredirect(True)
+        tip.attributes('-topmost', True)
+        tip.configure(background='#334155')
+        tk.Label(tip, text=self.text, justify='left', wraplength=340,
+                 background='#334155', foreground='#ffffff', padx=9, pady=6,
+                 font=('Microsoft YaHei UI', 9)).pack()
+        tip.update_idletasks()
+        x = self.widget.winfo_rootx() + 8
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 5
+        tip.geometry(f'+{x}+{y}')
+        self.tip = tip
+
+    def _hide(self):
+        if self.tip is not None:
+            try:
+                self.tip.destroy()
+            except tk.TclError:
+                pass
+            self.tip = None
+
+    def _destroy(self, _event=None):
+        self._cancel()
+        self._hide()
+
+
 class UsageTreeview(ttk.Treeview):
     """Draw quota bars only for visible cells, retaining normal tree behaviour."""
     def __init__(self, parent, **kwargs):

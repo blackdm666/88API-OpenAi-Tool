@@ -4,7 +4,7 @@ import tkinter as tk
 from tkinter import scrolledtext, ttk
 
 from .constants import MAX_REFRESH_WORKERS, MAX_UPLOAD_WORKERS
-from .gui_widgets import UsageTreeview
+from .gui_widgets import UsageTreeview, HoverTooltip
 
 
 class GUILayoutMixin:
@@ -72,16 +72,31 @@ class GUILayoutMixin:
         action_frame.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         for column in range(3):
             action_frame.columnconfigure(column, weight=1)
-        ttk.Button(action_frame, text="重新读取账号", command=self.reload_tokens, style="Primary.TButton").grid(row=0, column=0, sticky="ew", padx=3, pady=3)
-        ttk.Button(action_frame, text="刷新本地令牌", command=self.refresh_selected).grid(row=0, column=1, sticky="ew", padx=3, pady=3)
-        ttk.Button(action_frame, text="同步标签", command=self.sync_selected_labels).grid(row=0, column=2, sticky="ew", padx=3, pady=3)
-        ttk.Button(action_frame, text="上传选中", command=self.upload_selected).grid(row=1, column=0, sticky="ew", padx=3, pady=3)
-        ttk.Button(action_frame, text="远端配置", command=self.open_sub2api_upload_settings).grid(row=1, column=1, sticky="ew", padx=3, pady=3)
-        ttk.Button(action_frame, text="监控选中", command=lambda: self.set_recovery_selected(True)).grid(row=1, column=2, sticky="ew", padx=3, pady=3)
-        ttk.Button(action_frame, text="删除账号", command=self.delete_selected).grid(row=2, column=0, sticky="ew", padx=3, pady=3)
-        self.auto_refresh_button = ttk.Button(action_frame, text="启动自动维护", command=self.toggle_auto_refresh)
-        self.auto_refresh_button.grid(row=2, column=1, sticky="ew", padx=3, pady=3)
-        ttk.Button(action_frame, text="导入 / 导出", command=lambda: self.right_notebook.select(self.convert_tab)).grid(row=2, column=2, sticky="ew", padx=3, pady=3)
+        help_text = {
+            "重新读取账号": "重新扫描本地凭据目录，不会刷新 OAuth 令牌。",
+            "刷新本地令牌": "刷新选中账号的本地 OAuth 令牌并保存。",
+            "同步标签": "读取选中账号的订阅身份并更新本地标签。",
+            "上传选中": "将选中的本地凭据同步或更新到 Sub2API。",
+            "远端配置": "配置 Sub2API 连接、上传参数、代理池和自动维护规则。",
+            "监控选中": "绑定选中账号并纳入 Sub2API 自动维护。",
+            "删除账号": "删除本地凭据文件，不删除远端账号。",
+            "启动自动维护": "周期检查令牌、401、补授权、上传和运行验证。",
+            "导入 / 导出": "预览、导入或导出账号数据格式。",
+        }
+        def action(text, command, row, column, style="TButton"):
+            button = ttk.Button(action_frame, text=text, command=command, style=style)
+            button.grid(row=row, column=column, sticky="ew", padx=3, pady=3)
+            HoverTooltip(button, help_text[text])
+            return button
+        action("重新读取账号", self.reload_tokens, 0, 0, "Primary.TButton")
+        action("刷新本地令牌", self.refresh_selected, 0, 1)
+        action("同步标签", self.sync_selected_labels, 0, 2)
+        action("上传选中", self.upload_selected, 1, 0)
+        action("远端配置", self.open_sub2api_upload_settings, 1, 1)
+        action("监控选中", lambda: self.set_recovery_selected(True), 1, 2)
+        action("删除账号", self.delete_selected, 2, 0)
+        self.auto_refresh_button = action("启动自动维护", self.toggle_auto_refresh, 2, 1)
+        action("导入 / 导出", lambda: self.right_notebook.select(self.convert_tab), 2, 2)
 
         filter_frame = ttk.Frame(parent, style="Card.TFrame")
         filter_frame.grid(row=1, column=0, sticky="ew", pady=(0, 8))
