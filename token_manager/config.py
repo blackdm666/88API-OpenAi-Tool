@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .constants import (
+    APP_DIR,
     APP_CONFIG_FILE,
     DEFAULT_AUTO_REFRESH_INTERVAL,
     DEFAULT_AUTO_REFRESH_THRESHOLD,
@@ -23,6 +24,39 @@ from .constants import (
 
 
 from .utils import atomic_write_json
+
+
+def _known_documents_dirs() -> set[Path]:
+    """Return common Windows Documents locations used by this app.
+
+    A Documents root is a user workspace, not a token directory. Treating it
+    as one makes startup recurse through unrelated project files.
+    """
+    home = Path.home()
+    candidates = {
+        home / "Documents",
+        home / "OneDrive" / "Documents",
+        home / "OneDrive" / "文档",
+    }
+    return {path.resolve() for path in candidates if path.exists()}
+
+
+def _safe_token_directory(raw: Any) -> str:
+    configured = str(raw or "").strip()
+    if not configured:
+        return str(DEFAULT_TOKENS_DIR)
+    try:
+        path = Path(configured).expanduser().resolve()
+    except (OSError, RuntimeError):
+        return configured
+    if path in _known_documents_dirs():
+        # Keep existing desktop data when present; otherwise use the dedicated
+        # Documents/Sub2api location requested by the application design.
+        for candidate in (APP_DIR / "tokens", DEFAULT_TOKENS_DIR):
+            if candidate.exists():
+                return str(candidate)
+        return str(path / "Sub2api" / "tokens")
+    return configured
 
 
 def default_config() -> dict[str, Any]:
@@ -93,6 +127,7 @@ def _migrate_legacy_config(raw: dict[str, Any]) -> dict[str, Any]:
     if migrated.get("custom_scan_root") and not migrated.get("tokens_dir"):
         root = Path(str(migrated["custom_scan_root"])).expanduser()
         migrated["tokens_dir"] = str(root if root.name.lower() == "tokens" else root / "tokens")
+    migrated["tokens_dir"] = _safe_token_directory(migrated.get("tokens_dir"))
     (migrated.get("integrations") or {}).pop("cpa", None)
     return migrated
 
