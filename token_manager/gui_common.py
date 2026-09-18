@@ -215,6 +215,7 @@ class GUICommonMixin:
             bordercolor=self.palette["border"],
             borderwidth=0,
             relief="flat",
+            selectborderwidth=0,
         )
         style.configure(
             "Treeview.Heading",

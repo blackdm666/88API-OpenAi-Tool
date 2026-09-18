@@ -94,8 +94,9 @@ class UsageTreeview(ttk.Treeview):
         super().__init__(parent, **kwargs)
         self._bar_widgets = []
         self._bar_refresh = None
-        for event in ('<Configure>', '<Map>', '<MouseWheel>', '<Button-4>', '<Button-5>', '<ButtonRelease-1>', '<KeyRelease>', '<<TreeviewSelect>>'):
+        for event in ('<Configure>', '<Map>', '<MouseWheel>', '<Button-4>', '<Button-5>', '<ButtonRelease-1>', '<KeyRelease>'):
             self.bind(event, self.redraw_bars, add='+')
+        self.bind('<<TreeviewSelect>>', self._sync_selection_bars, add='+')
         self.bind('<Destroy>', self._cancel_bar_refresh, add='+')
 
     def _cancel_bar_refresh(self, event):
@@ -138,6 +139,19 @@ class UsageTreeview(ttk.Treeview):
     def redraw_bars(self, _event=None):
         if self._bar_refresh is None:
             self._bar_refresh = self.after_idle(self._draw_bars)
+
+    def _sync_selection_bars(self, _event=None):
+        """Paint the quota overlay in the same event as the row selection."""
+        if self._bar_refresh is not None:
+            try:
+                self.after_cancel(self._bar_refresh)
+            except tk.TclError:
+                pass
+            self._bar_refresh = None
+        if not self.winfo_ismapped():
+            return
+        self.update_idletasks()
+        self._draw_bars()
 
     def _select_bar_row(self, event, row):
         if event.state & 4:
