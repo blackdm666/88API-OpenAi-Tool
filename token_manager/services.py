@@ -335,14 +335,14 @@ def upload_record(
     if callable(log_fn):
         log_fn(f"开始上传 {email} -> {target}")
     normalized_target = str(target or "").strip().lower()
-    if normalized_target == "sub2api":
-        export_path = store.export_payload(email, normalized_target, sub2api_upload_payload(record, settings))
-    else:
-        export_path = None
-    if callable(log_fn) and export_path is not None:
-        log_fn(f"已输出 {normalized_target} 文件: {export_path}")
     uploader = _upload_target(target)
     ok, message = uploader(record, settings, proxy_url=proxy_url)
+    if normalized_target == 'sub2api':
+        # Export the same assignment used for the request, including existing
+        # remote proxy preservation; never draw a second random proxy.
+        export_path = store.export_payload(email, normalized_target, sub2api_upload_payload(record, settings))
+        if callable(log_fn):
+            log_fn(f"已输出 {normalized_target} 文件: {export_path}")
     merged = merge_patch(record, upload_state_patch(target, ok, message))
     store.save_record(merged, filename=record.get("_filename"))
     if callable(log_fn):

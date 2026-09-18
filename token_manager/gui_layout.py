@@ -11,23 +11,11 @@ class GUILayoutMixin:
         shell = ttk.Frame(self.root, padding=(14, 14, 14, 12), style="Shell.TFrame")
         shell.pack(fill=tk.BOTH, expand=True)
 
-        self._build_header(shell)
         left, right, bottom = self._build_main_panes(shell)
+        self._build_log_panel(bottom)
         self._build_token_panel(left)
         self._build_right_panel(right)
-        self._build_log_panel(bottom)
-        self.main_vertical_pane.forget(bottom)
         self.root.after(120, self._apply_initial_pane_layout)
-
-    def _build_header(self, parent) -> None:
-        header = ttk.Frame(parent, padding=(14, 12), style="Panel.TFrame")
-        header.pack(fill=tk.X, pady=(0, 10))
-
-        ttk.Label(header, text="OpenAI Token Manager", style="Hero.TLabel").pack(side=tk.LEFT)
-        ttk.Button(header, text="专注远端 / 双栏", command=self.toggle_account_panel).pack(side=tk.RIGHT, padx=8)
-        ttk.Button(header, text="自动维护规则", command=self.show_maintenance_rules).pack(side=tk.RIGHT, padx=8)
-        ttk.Button(header, text="展开 / 收起日志", command=self.toggle_log_panel).pack(side=tk.RIGHT, padx=8)
-        ttk.Label(header, textvariable=self.status_var, style="StatusChip.TLabel").pack(side=tk.RIGHT)
 
     def _build_main_panes(self, parent):
         main = ttk.Frame(parent, style="Shell.TFrame")
@@ -43,7 +31,7 @@ class GUILayoutMixin:
         self.main_horizontal_pane = ttk.PanedWindow(top_host, orient=tk.HORIZONTAL)
         self.main_horizontal_pane.grid(row=0, column=0, sticky="nsew")
 
-        bottom = ttk.LabelFrame(self.main_vertical_pane, text="运行日志", padding=8, style="Card.TLabelframe")
+        bottom = ttk.LabelFrame(self.main_vertical_pane, text="运行信息", padding=5, style="Card.TLabelframe")
         bottom.configure(height=120)
         self.log_panel = bottom
 
@@ -53,7 +41,7 @@ class GUILayoutMixin:
         self.main_horizontal_pane.add(left, weight=1)
         self.main_horizontal_pane.add(right, weight=1)
         self.main_vertical_pane.add(top_host, weight=5)
-        self.main_vertical_pane.add(bottom, weight=2)
+        self.main_vertical_pane.add(bottom, weight=0)
         return left, right, bottom
 
     def _apply_initial_pane_layout(self) -> None:
@@ -61,7 +49,7 @@ class GUILayoutMixin:
             self.root.update_idletasks()
             total_height = max(1, self.main_vertical_pane.winfo_height())
             total_width = max(1, self.main_horizontal_pane.winfo_width())
-            log_height = 100
+            log_height = 165 if self.log_expanded else 58
             if str(self.log_panel) in self.main_vertical_pane.panes():
                 self.main_vertical_pane.sashpos(0, max(420, total_height - log_height))
             self.main_horizontal_pane.sashpos(0, total_width // 2)
@@ -419,9 +407,8 @@ class GUILayoutMixin:
         self.sub2api_tree.tag_configure("invalidated", foreground="#a94438")
         self.sub2api_tree.tag_configure("warning", foreground=self.palette["accent"])
 
-        self.sub2api_detail_text = tk.Text(parent, wrap=tk.WORD, height=2, font=("Consolas", 9), bg=self.palette["card"], fg=self.palette["text"], relief="flat", insertbackground=self.palette["text"], highlightthickness=1, highlightbackground=self.palette["border"], padx=10, pady=10)
-        self.sub2api_detail_text.grid(row=3, column=0, sticky="ew", pady=(8, 0))
-        ttk.Button(parent, text="展开 / 收起账号详情", command=lambda: self.sub2api_detail_text.configure(height=8 if int(self.sub2api_detail_text.cget("height")) == 2 else 2)).grid(row=4, column=0, sticky="e", pady=3)
+        self.sub2api_detail_text = scrolledtext.ScrolledText(self.log_detail_tab, wrap=tk.WORD, height=2, font=("Consolas", 9), bg=self.palette["card"], fg=self.palette["text"], relief="flat", insertbackground=self.palette["text"], highlightthickness=1, highlightbackground=self.palette["border"], padx=10, pady=10)
+        self.sub2api_detail_text.pack(fill=tk.BOTH, expand=True)
         self.sub2api_detail_text.config(state=tk.DISABLED)
 
     def _build_sub2api_invalidated_tab(self, parent) -> None:
@@ -459,8 +446,8 @@ class GUILayoutMixin:
         self.sub2api_invalidated_tree.bind("<<TreeviewSelect>>", self.on_sub2api_invalidated_selection_changed)
         self.sub2api_invalidated_tree.tag_configure("invalidated", foreground="#a94438")
 
-        self.sub2api_invalidated_detail_text = tk.Text(parent, wrap=tk.WORD, height=4, font=("Consolas", 9), bg=self.palette["card"], fg=self.palette["text"], relief="flat", insertbackground=self.palette["text"], highlightthickness=1, highlightbackground=self.palette["border"], padx=10, pady=10)
-        self.sub2api_invalidated_detail_text.grid(row=2, column=0, sticky="ew", pady=(8, 0))
+        self.sub2api_invalidated_detail_text = scrolledtext.ScrolledText(self.log_invalid_tab, wrap=tk.WORD, height=4, font=("Consolas", 9), bg=self.palette["card"], fg=self.palette["text"], relief="flat", insertbackground=self.palette["text"], highlightthickness=1, highlightbackground=self.palette["border"], padx=10, pady=10)
+        self.sub2api_invalidated_detail_text.pack(fill=tk.BOTH, expand=True)
         self.sub2api_invalidated_detail_text.config(state=tk.DISABLED)
 
     def _build_settings_tab(self, parent) -> None:
@@ -515,31 +502,41 @@ class GUILayoutMixin:
         ttk.Button(sub2api_frame, text="保存设置", command=self.save_settings).pack(anchor=tk.E)
 
     def _build_log_panel(self, parent) -> None:
-        log_toolbar = ttk.Frame(parent, style="Card.TFrame")
-        log_toolbar.pack(fill=tk.X, pady=(0, 4))
-        ttk.Label(log_toolbar, textvariable=self.status_var, style="Card.TLabel").pack(side=tk.LEFT)
-        ttk.Button(log_toolbar, text="清空日志", command=self.clear_logs).pack(side=tk.RIGHT)
+        self.log_expanded = True
+        toolbar = ttk.Frame(parent, style='Card.TFrame')
+        toolbar.pack(fill=tk.X, pady=(0, 4))
+        toolbar.columnconfigure(0, weight=1)
+        ttk.Label(toolbar, textvariable=self.status_var, style='Card.TLabel', wraplength=550).grid(row=0, column=0, sticky='w')
+        for column, (label, command) in enumerate([
+            ('展开 / 收起信息', self.toggle_log_panel),
+            ('自动维护规则', self.show_maintenance_rules),
+            ('专注远端 / 双栏', self.toggle_account_panel),
+            ('清空日志', self.clear_logs),
+        ], start=1):
+            ttk.Button(toolbar, text=label, command=command).grid(row=0,column=column,padx=3)
+        self.info_notebook = ttk.Notebook(parent)
+        self.info_notebook.pack(fill=tk.BOTH, expand=True)
+        log_tab = ttk.Frame(self.info_notebook)
+        self.log_detail_tab = ttk.Frame(self.info_notebook)
+        self.log_invalid_tab = ttk.Frame(self.info_notebook)
+        self.info_notebook.add(log_tab, text='运行日志')
+        self.info_notebook.add(self.log_detail_tab, text='远端账号详情')
+        self.info_notebook.add(self.log_invalid_tab, text='失效账号详情')
         self.log_text = scrolledtext.ScrolledText(
-            parent,
-            height=3,
-            wrap=tk.WORD,
-            font=("Consolas", 9),
-            bg=self.palette["card"],
-            fg=self.palette["text"],
-            relief="flat",
-            insertbackground=self.palette["text"],
-            highlightthickness=1,
-            highlightbackground=self.palette["border"],
-        )
+            log_tab, height=4, wrap=tk.WORD, font=('Consolas',9),
+            bg=self.palette['card'], fg=self.palette['text'], relief='flat',
+            insertbackground=self.palette['text'], highlightthickness=0)
         self.log_text.pack(fill=tk.BOTH, expand=True)
 
     def toggle_log_panel(self):
-        panes = self.main_vertical_pane.panes()
-        if str(self.log_panel) in panes:
-            self.main_vertical_pane.forget(self.log_panel)
+        self.log_expanded = not self.log_expanded
+        if self.log_expanded:
+            self.info_notebook.pack(fill=tk.BOTH, expand=True)
         else:
-            self.main_vertical_pane.add(self.log_panel, weight=0)
-            self.root.after_idle(self._apply_initial_pane_layout)
+            self.info_notebook.pack_forget()
+        self.root.update_idletasks()
+        height = 165 if self.log_expanded else 58
+        self.main_vertical_pane.sashpos(0, max(300, self.main_vertical_pane.winfo_height() - height))
 
     def toggle_account_panel(self):
         if str(self.account_panel) in self.main_horizontal_pane.panes():

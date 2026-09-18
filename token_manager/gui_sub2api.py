@@ -280,11 +280,15 @@ Credential Keys:
         selection = self.sub2api_tree.selection()
         record = self.sub2api_row_index.get(selection[0], {}) if selection else None
         self._set_sub2api_detail(self.sub2api_detail_text, record, empty_text="未选择 Sub2API 账号")
+        if record:
+            self.info_notebook.select(self.log_detail_tab)
 
     def on_sub2api_invalidated_selection_changed(self, _event=None) -> None:
         selection = self.sub2api_invalidated_tree.selection()
         record = self.sub2api_invalidated_row_index.get(selection[0], {}) if selection else None
         self._set_sub2api_detail(self.sub2api_invalidated_detail_text, record, empty_text="未选择失效记录")
+        if record:
+            self.info_notebook.select(self.log_invalid_tab)
 
     def refresh_selected_sub2api_remote(self) -> None:
         records = self.selected_sub2api_pool_records()

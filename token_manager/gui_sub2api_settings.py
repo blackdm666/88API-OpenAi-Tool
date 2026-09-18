@@ -9,7 +9,7 @@ from .integrations import (
     fetch_sub2api_proxies,
     fetch_sub2api_accounts,
 )
-from .sub2api_policy import normalize_server_url, upload_options, match_remote
+from .sub2api_policy import normalize_server_url, upload_options, match_remote, proxy_candidates
 from .gui_widgets import CheckList
 
 
@@ -92,7 +92,8 @@ class GUISub2APISettingsMixin:
         field(7, "concurrency", "并发数", 10)
         field(8, "priority", "调度优先级", 1)
         field(9, "rate_multiplier", "账号倍率", 1)
-        field(10, "proxy_id", "IP代理 ID（空或0为直连）", "")
+        field(10, "proxy_id", "代理池 ID（逗号分隔）", "")
+        values['proxy_id'].set(','.join(map(str, proxy_candidates(cfg))))
         field(
             11,
             "codex_fingerprint_mode",
@@ -116,7 +117,7 @@ class GUISub2APISettingsMixin:
         ttk.Checkbutton(parameters, text="账号到期时自动暂停", variable=pause).grid(
             row=7, column=0, columnspan=2, sticky="w", pady=6
         )
-        catalog = tk.StringVar(value="读取远端选项后可查看分组和代理的名称、ID。")
+        catalog = tk.StringVar(value="代理可多选：每账号随机分配一个；重复上传保留池内原代理。留空或0为直连，401恢复不换代理。")
         ttk.Label(
             frame, textvariable=catalog, wraplength=630, style="CardSubtle.TLabel"
         ).pack(fill="x", pady=8)
@@ -197,7 +198,7 @@ class GUISub2APISettingsMixin:
             self.status_var.set("上传参数已保存；手动上传时应用，自动恢复仅更新凭据")
             dialog.destroy()
 
-        ttk.Button(parameters, text='多选分组 / 选择代理…', command=load_choices).grid(row=8, column=0, columnspan=2, sticky='ew', pady=6)
+        ttk.Button(parameters, text='多选分组 / 多选代理…', command=load_choices).grid(row=8, column=0, columnspan=2, sticky='ew', pady=6)
         ttk.Button(actions, text="读取分组 / 代理", command=load_choices).pack(
             side="left"
         )
@@ -209,34 +210,33 @@ class GUISub2APISettingsMixin:
     def show_sub2api_option_picker(self, owner, data, values):
         picker = tk.Toplevel(owner)
         picker.title("选择上传分组与代理")
-        picker.geometry("600x420")
+        picker.geometry("720x470")
         picker.transient(owner)
         picker.grab_set()
         picker.protocol("WM_DELETE_WINDOW", lambda: (picker.destroy(), owner.grab_set()))
         box = ttk.Frame(picker, padding=16)
         box.pack(fill="both", expand=True)
-        ttk.Label(box, text="勾选上传分组（可同时选择多个）").pack(anchor="w")
+        columns = ttk.Frame(box)
+        columns.pack(fill='both', expand=True)
+        columns.columnconfigure((0,1), weight=1)
+        columns.rowconfigure(1, weight=1)
+        ttk.Label(columns, text="上传分组（多选）").grid(row=0,column=0,sticky='w')
+        ttk.Label(columns, text="代理池（多选，随机分配）").grid(row=0,column=1,sticky='w')
         available = [
             g
             for g in data["groups"]
             if g.get("platform") == "openai" and g.get("status") == "active"
         ]
         selected = values["group_ids"].get().replace("，", ",").split(",")
-        group_list = CheckList(box, [(g['id'], f"#{g['id']}  {g['name']}") for g in available], [s.strip() for s in selected])
-        group_list.pack(fill='both', expand=True, pady=8)
+        group_list = CheckList(columns, [(g['id'], f"#{g['id']}  {g['name']}") for g in available], [s.strip() for s in selected])
+        group_list.grid(row=1,column=0,sticky='nsew',pady=8,padx=(0,8))
         proxies = [p for p in data["proxies"] if p.get("status") in ("active", "")]
-        labels = ["直连（不使用代理）"] + [f"#{p['id']}  {p['name']}" for p in proxies]
-        proxy_box = ttk.Combobox(box, values=labels, state="readonly")
-        proxy_box.pack(fill="x", pady=8)
-        current = next(
-            (
-                i + 1
-                for i, p in enumerate(proxies)
-                if str(p["id"]) == values["proxy_id"].get()
-            ),
-            0,
-        )
-        proxy_box.current(current)
+        selected_proxies = proxy_candidates({'proxy_id': values['proxy_id'].get()})
+        proxy_list = CheckList(columns, [(p['id'], f"#{p['id']}  {p['name']}") for p in proxies], selected_proxies)
+        proxy_list.grid(row=1,column=1,sticky='nsew',pady=8)
+        ttk.Button(columns,text='全选代理',command=proxy_list.select_all).grid(row=2,column=1,sticky='w')
+        ttk.Button(columns,text='清空代理（直连）',command=lambda: proxy_list.select_all(False)).grid(row=3,column=1,sticky='w',pady=4)
+        ttk.Label(box,text='不勾选代理表示直连。多选后每个账号只绑定一个代理；不是每次请求轮换IP。',wraplength=660).pack(fill='x',pady=8)
 
         def apply():
             selected_ids = group_list.selected()
@@ -246,8 +246,7 @@ class GUISub2APISettingsMixin:
                 )
                 return
             values["group_ids"].set(",".join(str(value) for value in selected_ids))
-            index = proxy_box.current()
-            values["proxy_id"].set(str(proxies[index - 1]["id"]) if index > 0 else "")
+            values["proxy_id"].set(','.join(map(str, proxy_list.selected())))
             picker.destroy()
             owner.grab_set()
 

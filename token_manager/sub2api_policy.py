@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import re
+from random import SystemRandom
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
@@ -41,6 +42,39 @@ def normalize_server_url(value: str) -> str:
     return urlunsplit((p.scheme, p.netloc, path, "", ""))
 
 
+def proxy_candidates(config: dict[str, Any]) -> list[int]:
+    """Keep compatibility with the old scalar proxy_id config; API stays scalar."""
+    raw = config.get('proxy_id')
+    if raw is None or raw == '' or raw == 0 or raw == '0':
+        return []
+    parts = raw if isinstance(raw, list) else str(raw).replace('，', ',').split(',')
+    ids = []
+    for part in parts:
+        text = str(part).strip()
+        if not re.fullmatch(r'[0-9]+', text) or int(text) <= 0:
+            raise ValueError('代理ID须为正整数，以逗号分隔；直连请单独填0或留空，不能混入代理池')
+        if int(text) not in ids:
+            ids.append(int(text))
+    return ids
+
+
+def assigned_proxy(record, config, current_proxy=None):
+    candidates = proxy_candidates(config)
+    endpoint = config.get('api_url', '')
+    server = normalize_server_url(endpoint) if endpoint else ''
+    saved = record.get('sub2api_proxy_assignment') or {}
+    if not candidates:
+        chosen = None
+    elif current_proxy in candidates:
+        chosen = current_proxy
+    elif saved.get('server') == server and saved.get('proxy_id') in candidates:
+        chosen = saved['proxy_id']
+    else:
+        chosen = SystemRandom().choice(candidates)
+    record['sub2api_proxy_assignment'] = {'server': server, 'proxy_id': chosen}
+    return chosen
+
+
 def upload_options(config: dict[str, Any]) -> dict[str, Any]:
     def integer(key, default, minimum, maximum):
         raw = config.get(key, default)
@@ -76,15 +110,13 @@ def upload_options(config: dict[str, Any]) -> dict[str, Any]:
     ws_mode = str(config.get('ws_mode', 'ctx_pool'))
     if ws_mode not in ('off', 'ctx_pool', 'passthrough', 'http_bridge'):
         raise ValueError('WS mode 无效')
-    proxy = str(config.get("proxy_id") or "").strip()
-    if proxy and (not proxy.isdigit() or int(proxy) < 0):
-        raise ValueError("代理 ID 必须为正整数；0或留空表示直连")
+    proxies = proxy_candidates(config)
     return {
         "group_ids": groups,
         "concurrency": integer("concurrency", 10, 1, 10000),
         "priority": integer("priority", 1, 0, 100000),
         "rate_multiplier": rate,
-        "proxy_id": int(proxy) if proxy and int(proxy) else None,
+        "proxy_id": proxies[0] if len(proxies) == 1 else None,
         "auto_pause_on_expired": bool(config.get("auto_pause_on_expired", True)),
         "extra": {
             "codex_fingerprint_mode": mode,

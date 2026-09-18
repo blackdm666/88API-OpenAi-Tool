@@ -1,6 +1,6 @@
 {
   "name": "OpenAI Token Manager",
-  "version": "2.2.0-88api.4",
+  "version": "2.2.0-88api.5",
   "description": "本地OpenAI账号与Sub2API远端管理工具",
   "author": "Based on Reverse Engineering",
   "license": "Personal Use Only",
@@ -73,6 +73,13 @@
       "date": "2026-09-18",
       "changes": [
         "默认左右双栏各50%，恢复双栏时均分，窗口缩放使用相同伸缩权重"
+      ]
+    },
+    "2.2.0-88api.5": {
+      "date": "2026-09-18",
+      "changes": [
+        "多选代理池、逐账号随机分配、重试保留分配",
+        "底部运行信息整合状态/控制/日志/账号详情，移除大标题与空白详情区"
       ]
     }
   }

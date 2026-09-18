@@ -7,7 +7,7 @@ from typing import Any
 import requests
 
 from .converters import to_sub2api_payload
-from .sub2api_policy import normalize_server_url, upload_options, match_remote, redact_error
+from .sub2api_policy import normalize_server_url, upload_options, match_remote, redact_error, assigned_proxy
 from .utils import build_requests_proxies, now_rfc3339, now_ts, safe_int
 
 
@@ -488,20 +488,22 @@ def delete_sub2api_account(
 def upload_to_sub2api(record: dict[str, Any], settings: dict[str, Any], proxy_url: str = "") -> tuple[bool, str]:
     try:
         config = _sub2api_settings(settings)
-        payload = sub2api_upload_payload(record, settings)
+        upload_options(config)  # Validate all settings before any remote write.
         matches = fetch_sub2api_accounts(settings, proxy_url=proxy_url, filters={'platform': 'openai', 'search': record.get('email', '')})
         existing = match_remote(record, matches)
         if existing:
             verified = apply_sub2api_credentials(record, existing, settings, proxy_url=proxy_url)
             # Manual upload explicitly applies the user's saved upload options.
             options = upload_options(config)
+            options['proxy_id'] = assigned_proxy(record, config, verified.get('proxy_id'))
             options['extra'] = {**(verified.get('extra') or {}), **options['extra']}
             options['proxy_id'] = options['proxy_id'] or 0  # official update API uses 0 to detach
             response = _sub2api_request(settings, 'PUT', f"/api/v1/admin/accounts/{existing['id']}", proxy_url=proxy_url, json=options)
             if response.status_code != 200:
                 return False, '凭据已同步，但参数更新失败：' + redact_error(_response_error(response))
             _sub2api_response_data(response)
-            return True, f"已更新远端账号 #{existing['id']}"
+            return True, f"已更新远端账号 #{existing['id']}，代理 #{options['proxy_id']}" if options['proxy_id'] else f"已更新远端账号 #{existing['id']}，直连"
+        payload = sub2api_upload_payload(record, settings)
         response = _sub2api_request(
             settings,
             "POST",
@@ -520,12 +522,13 @@ def upload_to_sub2api(record: dict[str, Any], settings: dict[str, Any], proxy_ur
             _sub2api_response_data(response)
         except Exception as exc:
             return False, str(exc)
-        return True, "上传成功"
+        return True, f"上传成功，代理 #{payload['proxy_id']}" if payload.get('proxy_id') else "上传成功，直连"
     return False, _response_error(response)
 
 
 def sub2api_upload_payload(record, settings):
     options = upload_options(_sub2api_settings(settings))
+    options['proxy_id'] = assigned_proxy(record, _sub2api_settings(settings))
     payload = to_sub2api_payload(record, group_ids=options['group_ids'])
     payload['extra'].update(options.pop('extra'))
     payload.update(options)

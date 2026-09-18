@@ -68,13 +68,30 @@ class LayoutTest(unittest.TestCase):
                     app.toggle_log_panel()
                     app.toggle_log_panel()
                     root.update_idletasks()
-                    self.assertNotIn(str(app.log_panel), app.main_vertical_pane.panes())
+                    self.assertIn(str(app.log_panel), app.main_vertical_pane.panes())
+                    self.assertTrue(app.log_expanded)
+                    self.assertTrue(app.info_notebook.winfo_ismapped())
                     app.open_sub2api_upload_settings()
                     root.update_idletasks()
                     dialogs = [
                         w for w in root.winfo_children() if isinstance(w, tk.Toplevel)
                     ]
                     self.assertEqual(len(dialogs), 1)
+                    owner = dialogs[0]
+                    variables = {'group_ids':tk.StringVar(value='2'), 'proxy_id':tk.StringVar(value='8')}
+                    app.show_sub2api_option_picker(owner, {
+                        'groups':[{'id':2,'name':'PLUS','platform':'openai','status':'active'}],
+                        'proxies':[{'id':8,'name':'proxy A','status':'active'},{'id':9,'name':'proxy B','status':'active'}]}, variables)
+                    root.update_idletasks()
+                    picker = next(w for w in owner.winfo_children() if isinstance(w,tk.Toplevel))
+                    def descendants(widget):
+                        for child in widget.winfo_children():
+                            yield child
+                            yield from descendants(child)
+                    proxy_checklist = next(w for w in descendants(picker) if isinstance(w,CheckList) and 9 in w.variables)
+                    proxy_checklist.variables[9].set(True)
+                    next(w for w in descendants(picker) if w.winfo_class()=='TButton' and w.cget('text')=='应用选择').invoke()
+                    self.assertEqual(variables['proxy_id'].get(),'8,9')
                     dialogs[0].destroy()
                     checklist = CheckList(root, [(2, 'PLUS'), (24, 'PRO')], [2])
                     checklist.variables[24].set(True)

@@ -27,7 +27,7 @@ class CheckList(ttk.Frame):
                 anchor="w", pady=4
             )
         if not choices:
-            ttk.Label(body, text="暂无可选分组，请先读取远端列表").pack(anchor="w")
+            ttk.Label(body, text="暂无可选项，请先读取远端列表").pack(anchor="w")
 
     def selected(self):
         return [value for value, variable in self.variables.items() if variable.get()]
