@@ -327,6 +327,8 @@ def fetch_sub2api_accounts(
             params={
                 "page": page,
                 "page_size": page_size,
+                "sort_by": "name",
+                "sort_order": "asc",
                 **query_filters,
             },
         )
@@ -398,8 +400,24 @@ def fetch_sub2api_accounts(
                 }
             )
         page += 1
-    records.sort(key=lambda item: (str(item.get("email") or ""), str(item.get("name") or "")))
     return records
+
+
+def fetch_sub2api_usage(settings, account_ids, *, proxy_url=''):
+    ids = list(dict.fromkeys(int(i) for i in account_ids if int(i) > 0))
+    if len(ids) > 50:
+        raise ValueError('每次最多更新50个账号的用量，请缩小筛选或选择账号')
+    result = {'usage': {}, 'errors': {}}
+    for start in range(0, len(ids), 20):
+        batch = ids[start:start+20]
+        response = _sub2api_request(settings, 'POST', '/api/v1/admin/accounts/usage/batch', proxy_url=proxy_url,
+                                   json={'account_ids': batch, 'force': False})
+        if response.status_code != 200:
+            raise RuntimeError(redact_error(_response_error(response)))
+        data = _sub2api_response_data(response)
+        result['usage'].update(data.get('usage') or {})
+        result['errors'].update({str(k): redact_error(v) for k,v in (data.get('errors') or {}).items()})
+    return result
 
 
 def refresh_sub2api_accounts(

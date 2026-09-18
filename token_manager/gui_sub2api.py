@@ -5,6 +5,9 @@ from typing import Any
 import tkinter as tk
 from tkinter import messagebox, ttk
 from .gui_widgets import CheckList
+from .integrations import fetch_sub2api_usage
+from .usage_display import snapshot_usage, quota_cell, usage_details
+from .sub2api_policy import normalize_server_url, match_remote
 
 from .services import (
     delete_sub2api_remote_records,
@@ -52,7 +55,7 @@ class GUISub2APIMixin:
         self.sub2api_group_filter_var.set("全部分组")
         self.sub2api_group_filters.clear()
         self.sub2api_status_filter_var.set("全部状态")
-        self.sub2api_type_filter_var.set("全部类型")
+        self.sub2api_type_filter_var.set("oauth")
         self.populate_sub2api_tree()
 
     def filter_sub2api_records(self, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -109,15 +112,14 @@ class GUISub2APIMixin:
         ttk.Button(buttons, text='应用筛选', command=apply, style='Primary.TButton').pack(side='right')
 
     def populate_sub2api_tree(self) -> None:
+        selected = set(self.sub2api_tree.selection())
         for item in self.sub2api_tree.get_children():
             self.sub2api_tree.delete(item)
-        for item in self.sub2api_invalidated_tree.get_children():
-            self.sub2api_invalidated_tree.delete(item)
 
         self.sub2api_row_index = {}
         self.sub2api_invalidated_row_index = {}
         self.filtered_sub2api_records = self.filter_sub2api_records(self.sub2api_records)
-        self.invalidated_sub2api_records = [record for record in self.sub2api_records if is_sub2api_invalidated(record)]
+        self.invalidated_sub2api_records = [record for record in self.filtered_sub2api_records if is_sub2api_invalidated(record)]
         self._update_sub2api_group_filter_values()
 
         active_count = 0
@@ -150,45 +152,27 @@ class GUISub2APIMixin:
                 tk.END,
                 iid=iid,
                 values=(
-                    record.get("email", ""),
+                    record.get("id", ""),
+                    record.get("name") or record.get("email", ""),
                     self._sub2api_groups_text(record),
                     record.get("status", ""),
-                    record.get("type", ""),
-                    self._sub2api_flags_text(record),
-                    record.get("expires_at_text", ""),
-                    record.get("last_used_at", ""),
+                    quota_cell(self.usage_for_record(record),"five_hour"),
+                    quota_cell(self.usage_for_record(record),"seven_day"),
                     self._sub2api_error_summary(record),
                 ),
                 tags=tags,
             )
 
-        for idx, record in enumerate(self.invalidated_sub2api_records, start=1):
-            iid = f"inv_{self._build_sub2api_row_id(record, idx)}"
-            self.sub2api_invalidated_row_index[iid] = record
-            self.sub2api_invalidated_tree.insert(
-                "",
-                tk.END,
-                iid=iid,
-                values=(
-                    record.get("email", ""),
-                    self._sub2api_groups_text(record, max_len=40),
-                    record.get("status", ""),
-                    record.get("expires_at_text", ""),
-                    self._sub2api_error_summary(record, max_len=140),
-                ),
-                tags=("invalidated",),
-            )
+            if iid in selected:
+                self.sub2api_tree.selection_add(iid)
 
-        self.sub2api_stats_var.set(
-            f"Sub2API 账号 {len(self.sub2api_records)}  当前 {len(self.filtered_sub2api_records)}  Active {sum(1 for item in self.sub2api_records if str(item.get('status') or '').lower() == 'active')}  Error {sum(1 for item in self.sub2api_records if str(item.get('status') or '').lower() == 'error')}  失效 {len(self.invalidated_sub2api_records)}"
-        )
+        self.sub2api_stats_var.set(f'显示 {len(self.filtered_sub2api_records)} / {len(self.sub2api_records)} · 异常 {error_count} · 名称升序 · 双击看用量')
         self.sub2api_pool_stats_var.set(
             f"当前 {len(self.filtered_sub2api_records)}  Active {active_count}  Inactive {inactive_count}  Error {error_count}  停调度 {unschedulable_count}"
         )
         self.sub2api_invalidated_stats_var.set(f"失效记录 {len(self.invalidated_sub2api_records)}")
         self.sub2api_tree.xview_moveto(0)
         self.on_sub2api_selection_changed()
-        self.on_sub2api_invalidated_selection_changed()
 
     @staticmethod
     def _build_sub2api_row_id(record: dict[str, Any], idx: int) -> str:
@@ -217,6 +201,7 @@ class GUISub2APIMixin:
     def refresh_sub2api_accounts(self) -> None:
         settings = self.current_settings()
         proxy = settings.get("http_proxy", "")
+        server = normalize_server_url(settings["integrations"]["sub2api"]["api_url"])
 
         def worker():
             return fetch_sub2api_remote_snapshot(settings, proxy_url=proxy, log_fn=self.log)
@@ -228,11 +213,14 @@ class GUISub2APIMixin:
                 self.sub2api_stats_var.set("Sub2API 加载失败")
                 return
             self.persist_runtime_settings(settings)
+            self.sub2api_usage_cache.clear()
+            self.sub2api_snapshot_server=server
             self.sub2api_groups = result.get("groups", [])
             self.sub2api_records = result.get("records", [])
             self.sub2api_index = self._build_sub2api_email_index(self.sub2api_records)
             self.populate_sub2api_tree()
-            self.log(f"Sub2API 列表已刷新，共 {len(self.sub2api_records)} 条")
+            self.reload_tokens(save_first=False)
+            self.log(f"Sub2API 列表已刷新，共 {len(self.sub2api_records)} 条；用量来自已有快照，需更新可选中账号点击更新用量")
 
         self.run_background("正在连接 Sub2API", worker, done)
 
@@ -240,55 +228,69 @@ class GUISub2APIMixin:
         selected = set(self.sub2api_tree.selection())
         return [record for iid, record in self.sub2api_row_index.items() if iid in selected]
 
-    def selected_sub2api_invalidated_records(self) -> list[dict[str, Any]]:
-        selected = set(self.sub2api_invalidated_tree.selection())
-        return [record for iid, record in self.sub2api_invalidated_row_index.items() if iid in selected]
+    def usage_for_record(self, record):
+        account_id=record.get('id')
+        return self.sub2api_usage_cache[account_id] if account_id in self.sub2api_usage_cache else snapshot_usage(record)
 
-    def _set_sub2api_detail(self, widget, record: dict[str, Any] | None, *, empty_text: str) -> None:
-        if not record:
-            detail = empty_text
-        else:
-            credentials = record.get("credentials") or {}
-            detail = f"""邮箱: {record.get('email', '')}
-名称: {record.get('name', '')}
-账号 ID: {record.get('id', '')}
-平台: {record.get('platform', '')}
-类型: {record.get('type', '')}
-状态: {record.get('status', '')}
-分组: {', '.join(record.get('group_names') or []) or '无'}
-Schedulable: {record.get('schedulable', True)}
-到期时间: {record.get('expires_at_text', '') or record.get('expires_at', '') or '无'}
-最后使用: {record.get('last_used_at', '') or '无'}
-限流恢复: {record.get('rate_limit_reset_at', '') or '无'}
-临时停调度: {record.get('temp_unschedulable_until', '') or '无'}
-并发: {record.get('concurrency', 0)}
-优先级: {record.get('priority', 0)}
-Proxy ID: {record.get('proxy_id', '')}
+    def local_remote_record(self, record):
+        try:
+            return match_remote(record, self.sub2api_records)
+        except ValueError:
+            return None
 
-错误信息:
-{record.get('error_message', '') or '无'}
+    def on_sub2api_selection_changed(self, _event=None):
+        rows=self.selected_sub2api_pool_records()
+        text=usage_details(self.usage_for_record(rows[0])) if rows else '双击远端账号查看用量明细'
+        self.sub2api_usage_text.configure(state=tk.NORMAL)
+        self.sub2api_usage_text.delete('1.0',tk.END)
+        self.sub2api_usage_text.insert('1.0',text)
+        self.sub2api_usage_text.configure(state=tk.DISABLED)
 
-Credential Keys:
-{', '.join(sorted(str(key) for key in credentials.keys())) or '无'}
-"""
-        widget.config(state=tk.NORMAL)
-        widget.delete("1.0", tk.END)
-        widget.insert("1.0", detail)
-        widget.config(state=tk.DISABLED)
+    def show_selected_usage_details(self, _event=None):
+        self.on_sub2api_selection_changed()
+        if not self.log_expanded:
+            self.toggle_log_panel()
+        self.info_notebook.select(self.log_detail_tab)
 
-    def on_sub2api_selection_changed(self, _event=None) -> None:
-        selection = self.sub2api_tree.selection()
-        record = self.sub2api_row_index.get(selection[0], {}) if selection else None
-        self._set_sub2api_detail(self.sub2api_detail_text, record, empty_text="未选择 Sub2API 账号")
-        if record:
-            self.info_notebook.select(self.log_detail_tab)
-
-    def on_sub2api_invalidated_selection_changed(self, _event=None) -> None:
-        selection = self.sub2api_invalidated_tree.selection()
-        record = self.sub2api_invalidated_row_index.get(selection[0], {}) if selection else None
-        self._set_sub2api_detail(self.sub2api_invalidated_detail_text, record, empty_text="未选择失效记录")
-        if record:
-            self.info_notebook.select(self.log_invalid_tab)
+    def refresh_sub2api_usage(self):
+        rows=self.selected_sub2api_pool_records() or self.filtered_sub2api_records
+        rows=[r for r in rows if r.get('platform')=='openai' and r.get('type')=='oauth']
+        if not rows:
+            messagebox.showinfo('更新用量','请先加载并选择OAuth账号')
+            return
+        if len(rows)>50:
+            messagebox.showinfo('更新用量','请选中账号或缩小分组筛选，每次最多50个')
+            return
+        settings=self.current_settings()
+        server=normalize_server_url(settings['integrations']['sub2api']['api_url'])
+        if self.sub2api_snapshot_server and self.sub2api_snapshot_server != server:
+            messagebox.showinfo('服务器已变更','请先重新刷新账号列表')
+            return
+        ids=[r['id'] for r in rows]
+        def worker():
+            return fetch_sub2api_usage(settings,ids,proxy_url=settings.get('http_proxy',''))
+        def done(result):
+            self.set_running(False,'用量更新完成')
+            if result.get('error'):
+                messagebox.showerror('读取用量失败',result['error'])
+                return
+            for account_id in ids:
+                key=str(account_id)
+                data=(result.get('usage') or {}).get(key)
+                error=(result.get('errors') or {}).get(key)
+                record=next((r for r in rows if r['id']==account_id),{})
+                # The server creates a 0% window when it only has local request
+                # statistics. Don't present that placeholder as known quota.
+                if data:
+                    for short,window_key in [('5h','five_hour'),('7d','seven_day')]:
+                        window=data.get(window_key)
+                        if isinstance(window,dict) and window.get('utilization')==0 and not window.get('resets_at') and f'codex_{short}_used_percent' not in (record.get('extra') or {}):
+                            window['utilization']=None
+                self.sub2api_usage_cache[account_id]={'error':error} if error else data or {}
+            self.populate_sub2api_tree()
+            self.reload_tokens(save_first=False)
+            self.log(f"Sub2API用量读取 {len(ids)} 个，失败 {len(result.get('errors') or {})} 个；未强制探测")
+        self.run_background('正在读取账号用量',worker,done)
 
     def refresh_selected_sub2api_remote(self) -> None:
         records = self.selected_sub2api_pool_records()
@@ -363,19 +365,7 @@ Credential Keys:
             return
         self._delete_sub2api_records(records, title=f"确定删除选中的 {len(records)} 个远端 Sub2API 账号吗？")
 
-    def delete_selected_invalidated_sub2api_records(self) -> None:
-        records = self.selected_sub2api_invalidated_records()
-        if not records:
-            messagebox.showerror("错误", "请先选择失效记录")
-            return
-        self._delete_sub2api_records(records, title=f"确定删除选中的 {len(records)} 个失效账号吗？")
 
-    def delete_all_invalidated_sub2api_records(self) -> None:
-        records = list(self.invalidated_sub2api_records)
-        if not records:
-            messagebox.showinfo("提示", "当前没有失效记录")
-            return
-        self._delete_sub2api_records(records, title=f"确定删除全部 {len(records)} 个失效账号吗？")
 
     def _delete_sub2api_records(self, records: list[dict[str, Any]], *, title: str) -> None:
         if not messagebox.askyesno("确认", title):

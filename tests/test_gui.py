@@ -48,7 +48,8 @@ class LayoutTest(unittest.TestCase):
                     self.assertEqual(len(app.sub2api_tree.get_children()), 16)
                     self.assertNotIn('CPA', [app.right_notebook.tab(tab, 'text') for tab in app.right_notebook.tabs()])
                     app.sub2api_group_filters = {'GPT PLUS', 'GPT PRO'}
-                    mixed = [{'email':'a', 'group_names':['GPT PLUS']}, {'email':'b','group_names':['GPT PRO']}, {'email':'c','group_names':['Other']}]
+                    self.assertEqual(app.sub2api_type_filter_var.get(),'oauth')
+                    mixed = [{'email':'a', 'group_names':['GPT PLUS'],'type':'oauth'}, {'email':'b','group_names':['GPT PRO'],'type':'oauth'}, {'email':'c','group_names':['Other'],'type':'oauth'}, {'email':'api','group_names':['GPT PLUS'],'type':'apikey'}]
                     self.assertEqual([r['email'] for r in app.filter_sub2api_records(mixed)], ['a','b'])
                     app.sub2api_group_filters.clear()
                     self.assertGreaterEqual(app.sub2api_tree.winfo_height(), 200)

@@ -93,6 +93,8 @@ class TokenManagerGUI(
         self.sub2api_row_index: dict[str, dict[str, Any]] = {}
         self.sub2api_invalidated_row_index: dict[str, dict[str, Any]] = {}
         self.sub2api_groups: list[dict[str, Any]] = []
+        self.sub2api_usage_cache = {}
+        self.sub2api_snapshot_server = ""
         self.sub2api_group_filters = set()
         self.manual_oauth_start = None
         self.running_job = False
@@ -124,7 +126,7 @@ class TokenManagerGUI(
         self.sub2api_search_var = tk.StringVar(value="")
         self.sub2api_group_filter_var = tk.StringVar(value="全部分组")
         self.sub2api_status_filter_var = tk.StringVar(value="全部状态")
-        self.sub2api_type_filter_var = tk.StringVar(value="全部类型")
+        self.sub2api_type_filter_var = tk.StringVar(value="oauth")
 
         oauth = self.config.get("oauth") or {}
         self.oauth_auth_url_var = tk.StringVar(value=str(oauth.get("auth_url") or ""))

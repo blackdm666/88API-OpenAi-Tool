@@ -7,6 +7,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 
 from .integrations import sub2api_upload_payload
+from .usage_display import quota_cell
 from .converters import from_local_payload, from_sub2api_payload
 from .services import export_organized_payloads, refresh_record, run_batch, sync_subscription, upload_record
 
@@ -19,9 +20,16 @@ class GUIRecordsMixin:
         for item in self.token_tree.get_children():
             self.token_tree.delete(item)
         all_records = self.store.load_all()
+        rank={r["id"]:i for i,r in enumerate(self.sub2api_records)}
+        def remote_order(record):
+            remote=self.local_remote_record(record)
+            return (rank.get(remote["id"],len(rank)) if remote else len(rank),str(record.get("email","")).casefold())
+        all_records.sort(key=remote_order)
         self.records = self.filter_records(all_records)
         self.update_stats(all_records, self.records)
         for record in self.records:
+            remote=self.local_remote_record(record)
+            usage=self.usage_for_record(remote) if remote else {}
             upload_summary = self.upload_summary(record)
             status = "已过期" if record["_is_expired"] else "有效"
             if record.get("uploads"):
@@ -42,6 +50,8 @@ class GUIRecordsMixin:
                 values=(
                     record.get("email", "Unknown"),
                     self.plan_label(record),
+                    quota_cell(usage,"five_hour"),
+                    quota_cell(usage,"seven_day"),
                     status,
                     record["_remaining_text"],
                     upload_summary,
