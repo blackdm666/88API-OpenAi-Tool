@@ -17,6 +17,7 @@ from .constants import DEFAULT_AUTH_TIMEOUT_SECONDS
 from .sub2api_policy import proxy_candidates
 from .oauth import browser_assisted_authorize, exchange_callback, generate_oauth_start
 from .services import refresh_record
+from .gui_widgets import center_window
 
 
 def saved_credential_lines(accounts: dict, allowed_emails=None) -> str:
@@ -62,6 +63,7 @@ class GUIAuthMixin:
         dialog.title('管理已存 2FA 资料')
         dialog.geometry('640x440')
         dialog.transient(self.root)
+        center_window(dialog, self.root)
         dialog.grab_set()
         frame = ttk.Frame(dialog, padding=14)
         frame.pack(fill='both', expand=True)

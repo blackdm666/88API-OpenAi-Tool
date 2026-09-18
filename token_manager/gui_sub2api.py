@@ -6,7 +6,7 @@ import time
 
 import tkinter as tk
 from tkinter import messagebox, ttk
-from .gui_widgets import CheckList
+from .gui_widgets import CheckList, center_window
 from .integrations import (
     bulk_update_sub2api_accounts,
     fetch_sub2api_usage,
@@ -211,6 +211,7 @@ class GUISub2APIMixin:
         dialog.title('筛选分组 · 多选')
         dialog.geometry('470x380')
         dialog.transient(self.root)
+        center_window(dialog, self.root)
         dialog.grab_set()
         catalog = self.sub2api_group_catalog()
         choices = CheckList(dialog, [(i, f'{name} (#{i})') for i,name in sorted(catalog.items())], self.sub2api_group_filter_ids)
@@ -496,6 +497,7 @@ class GUISub2APIMixin:
         dialog.title(f"编辑远端账号 #{record.get('id', '')}")
         dialog.geometry('560x470')
         dialog.transient(self.root)
+        center_window(dialog, self.root)
         dialog.grab_set()
         frame = ttk.Frame(dialog, padding=16)
         frame.pack(fill='both', expand=True)
@@ -595,15 +597,16 @@ class GUISub2APIMixin:
         dialog.title(f"批量编辑远端账号（{len(records)} 个）")
         dialog.geometry("560x470")
         dialog.transient(self.root)
+        center_window(dialog, self.root)
         dialog.grab_set()
         frame = ttk.Frame(dialog, padding=16)
         frame.pack(fill="both", expand=True)
         frame.columnconfigure(1, weight=1)
 
         values = {
-            "concurrency": tk.StringVar(),
-            "priority": tk.StringVar(),
-            "rate_multiplier": tk.StringVar(),
+            "concurrency": tk.StringVar(value="不修改"),
+            "priority": tk.StringVar(value="不修改"),
+            "rate_multiplier": tk.StringVar(value="不修改"),
             "proxy": tk.StringVar(value="不修改"),
             "fingerprint": tk.StringVar(value="不修改"),
             "ws_mode": tk.StringVar(value="不修改"),
@@ -622,6 +625,17 @@ class GUISub2APIMixin:
             )
             if options is None:
                 widget = ttk.Entry(frame, textvariable=values[key])
+                if key in {"concurrency", "priority", "rate_multiplier"}:
+                    def clear_default(_event, variable=values[key]):
+                        if variable.get() == "不修改":
+                            variable.set("")
+
+                    def restore_default(_event, variable=values[key]):
+                        if not variable.get().strip():
+                            variable.set("不修改")
+
+                    widget.bind("<FocusIn>", clear_default)
+                    widget.bind("<FocusOut>", restore_default)
             else:
                 widget = ttk.Combobox(
                     frame, textvariable=values[key], values=options, state="readonly"
@@ -646,19 +660,19 @@ class GUISub2APIMixin:
             updates: dict[str, Any] = {}
             try:
                 raw_concurrency = values["concurrency"].get().strip()
-                if raw_concurrency:
+                if raw_concurrency and raw_concurrency != "不修改":
                     concurrency = int(raw_concurrency)
                     if concurrency < 1 or concurrency > 10000:
                         raise ValueError
                     updates["concurrency"] = concurrency
                 raw_priority = values["priority"].get().strip()
-                if raw_priority:
+                if raw_priority and raw_priority != "不修改":
                     priority = int(raw_priority)
                     if priority < 0 or priority > 100000:
                         raise ValueError
                     updates["priority"] = priority
                 raw_rate = values["rate_multiplier"].get().strip()
-                if raw_rate:
+                if raw_rate and raw_rate != "不修改":
                     rate = float(raw_rate)
                     if rate < 0:
                         raise ValueError

@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from token_manager.config import default_config
 from token_manager.gui import TokenManagerGUI
-from token_manager.gui_widgets import CheckList
+from token_manager.gui_widgets import CheckList, center_window
 
 
 class LayoutTest(unittest.TestCase):
@@ -121,6 +121,27 @@ class LayoutTest(unittest.TestCase):
                     next(w for w in descendants(picker) if w.winfo_class()=='TButton' and w.cget('text')=='应用选择').invoke()
                     self.assertEqual(variables['proxy_id'].get(),'8,9')
                     dialogs[0].destroy()
+                    centered = tk.Toplevel(root)
+                    centered.geometry("200x100+0+0")
+                    center_window(centered, root)
+                    root.update_idletasks()
+                    expected_x = root.winfo_rootx() + (root.winfo_width() - centered.winfo_width()) // 2
+                    expected_y = root.winfo_rooty() + (root.winfo_height() - centered.winfo_height()) // 2
+                    self.assertAlmostEqual(centered.winfo_rootx(), expected_x, delta=25)
+                    self.assertAlmostEqual(centered.winfo_rooty(), expected_y, delta=25)
+                    centered.destroy()
+                    app.edit_multiple_sub2api_remote([app.sub2api_records[0], app.sub2api_records[1]])
+                    root.update_idletasks()
+                    bulk_dialog = next(
+                        w for w in root.winfo_children()
+                        if isinstance(w, tk.Toplevel) and w.title().startswith("批量编辑远端账号")
+                    )
+                    bulk_entries = [
+                        w for w in descendants(bulk_dialog)
+                        if w.winfo_class() == "TEntry"
+                    ]
+                    self.assertEqual([entry.get() for entry in bulk_entries[:3]], ["不修改"] * 3)
+                    bulk_dialog.destroy()
                     checklist = CheckList(root, [(2, 'PLUS'), (24, 'PRO')], [2])
                     checklist.variables[24].set(True)
                     self.assertEqual(checklist.selected(), [2,24])

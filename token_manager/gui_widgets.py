@@ -4,6 +4,24 @@ import tkinter as tk
 from tkinter import ttk
 
 
+def center_window(window, parent=None) -> None:
+    """Place a newly created window at the center of its owner."""
+    owner = parent or getattr(window, "master", None)
+    window.update_idletasks()
+    width = max(window.winfo_width(), window.winfo_reqwidth())
+    height = max(window.winfo_height(), window.winfo_reqheight())
+    if owner is not None and owner.winfo_exists():
+        owner.update_idletasks()
+        x = owner.winfo_rootx() + (owner.winfo_width() - width) // 2
+        y = owner.winfo_rooty() + (owner.winfo_height() - height) // 2
+    else:
+        x = (window.winfo_screenwidth() - width) // 2
+        y = (window.winfo_screenheight() - height) // 2
+    max_x = max(0, window.winfo_screenwidth() - width)
+    max_y = max(0, window.winfo_screenheight() - height)
+    window.geometry(f"+{max(0, min(x, max_x))}+{max(0, min(y, max_y))}")
+
+
 class HoverTooltip:
     """Delayed help bubble for compact toolbar buttons."""
     def __init__(self, widget, text, *, delay=450):

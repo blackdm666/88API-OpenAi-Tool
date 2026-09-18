@@ -10,7 +10,7 @@ from .integrations import (
     fetch_sub2api_accounts,
 )
 from .sub2api_policy import normalize_server_url, upload_options, match_remote, proxy_candidates, default_list_group_ids
-from .gui_widgets import CheckList
+from .gui_widgets import CheckList, center_window
 
 
 FINGERPRINTS = {
@@ -36,6 +36,7 @@ class GUISub2APISettingsMixin:
         dialog.geometry("740x600")
         dialog.minsize(660, 570)
         dialog.transient(self.root)
+        center_window(dialog, self.root)
         dialog.grab_set()
         frame = ttk.Frame(dialog, padding=20, style="Card.TFrame")
         frame.pack(fill="both", expand=True)
@@ -290,6 +291,7 @@ class GUISub2APISettingsMixin:
         picker.title("选择上传分组与代理")
         picker.geometry("720x470")
         picker.transient(owner)
+        center_window(picker, owner)
         picker.grab_set()
         picker.protocol("WM_DELETE_WINDOW", lambda: (picker.destroy(), owner.grab_set()))
         box = ttk.Frame(picker, padding=16)
