@@ -28,16 +28,24 @@ class AuthPreflightTest(unittest.TestCase):
 
     def test_active_including_cooldown_and_disabled_scheduling_skips_login(self):
         for fields in ({'schedulable': True}, {'schedulable': False}, {'rate_limit_reset_at': '2099-01-01T00:00:00Z'}):
-            eligible, skipped = plan_authorization([account()], [], [remote(status='active', **fields)])
+            eligible, skipped = plan_authorization([account()], [{'email': 'a@example.test'}], [remote(status='active', **fields)])
             self.assertFalse(eligible)
             self.assertIn('正常', skipped[0]['reason'])
 
     def test_authorization_failures_and_new_accounts_are_eligible(self):
+        local = [{'email': 'a@example.test'}]
         for remotes in ([], [remote(status='error', error_message='Token revoked (401)')],
                         [remote(status='error', error_message='HTTP 401')]):
-            eligible, skipped = plan_authorization([account()], [], remotes)
+            eligible, skipped = plan_authorization([account()], local, remotes)
             self.assertEqual(len(eligible), 1)
             self.assertFalse(skipped)
+
+    def test_deleted_local_account_is_never_authorized_from_saved_material(self):
+        eligible, skipped = plan_authorization(
+            [account()], [], [remote(status='error', error_message='Token revoked (401)')]
+        )
+        self.assertFalse(eligible)
+        self.assertIn('废弃', skipped[0]['reason'])
 
     def test_other_failures_and_inactive_accounts_do_not_trigger_login(self):
         for row in (remote(status='error', error_message='429'), remote(status='inactive'), remote(status='unknown')):
@@ -46,7 +54,7 @@ class AuthPreflightTest(unittest.TestCase):
             self.assertEqual(len(skipped), 1)
 
     def test_ambiguous_identity_skips(self):
-        eligible, skipped = plan_authorization([account()], [], [remote(status='active'), remote(status='error')])
+        eligible, skipped = plan_authorization([account()], [{'email': 'a@example.test'}], [remote(status='active'), remote(status='error')])
         self.assertFalse(eligible)
         self.assertIn('多个', skipped[0]['reason'])
 
@@ -76,7 +84,7 @@ class AuthPreflightTest(unittest.TestCase):
         raw='\n'.join(account(email).raw_line for email in ('a@example.test','b@example.test'))
         runner, log=Mock(return_value={'success_count':1}), Mock()
         with patch('token_manager.auth_batch.fetch_sub2api_accounts',return_value=[remote(status='active'),remote('b@example.test',status='error',error_message='401')]):
-            result=run_checked_authorization(raw,cfg,[],runner,{},log_fn=log)
+            result=run_checked_authorization(raw,cfg,[{'email':'a@example.test'},{'email':'b@example.test'}],runner,{},log_fn=log)
         self.assertEqual(result['skipped_count'],1)
         self.assertNotIn('a@example.test',runner.call_args.args[0])
         self.assertIn('b@example.test',runner.call_args.args[0])

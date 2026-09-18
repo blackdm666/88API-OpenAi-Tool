@@ -19,8 +19,9 @@ from .oauth import browser_assisted_authorize, exchange_callback, generate_oauth
 from .services import refresh_record
 
 
-def saved_credential_lines(accounts: dict) -> str:
+def saved_credential_lines(accounts: dict, allowed_emails=None) -> str:
     """Build authorization input only in memory; never place it in the editor."""
+    allowed = {str(email).strip().casefold() for email in (allowed_emails or [])}
     lines = []
     for item in accounts.values() if isinstance(accounts, dict) else []:
         if not isinstance(item, dict):
@@ -28,7 +29,7 @@ def saved_credential_lines(accounts: dict) -> str:
         email = str(item.get('email') or '').strip()
         password = str(item.get('password') or '')
         totp_secret = str(item.get('totp_secret') or '').strip()
-        if email and password and totp_secret:
+        if email and (not allowed or email.casefold() in allowed) and password and totp_secret:
             lines.append(f'{email}----{password}----{totp_secret}')
     return '\n'.join(lines)
 
@@ -210,8 +211,10 @@ class GUIAuthMixin:
         # editor may be empty or intentionally kept hidden; smart recovery can
         # still authorize every saved identity without asking the user to paste
         # passwords/TOTP secrets again.
+        local_records = self.store.load_all()
+        local_emails = [record.get('email') for record in local_records if record.get('email')]
         try:
-            raw_text = saved_credential_lines(CredentialVault().load())
+            raw_text = saved_credential_lines(CredentialVault().load(), local_emails)
         except Exception as exc:
             messagebox.showerror('资料库读取失败', str(exc))
             return
@@ -219,7 +222,7 @@ class GUIAuthMixin:
             raw_text = self.auth2fa_input.get("1.0", "end")
         accounts, errors = parse_account_lines(raw_text)
         if not accounts:
-            messagebox.showerror("错误", "请先导入并加密保存账号资料")
+            messagebox.showerror("错误", "左侧没有可补授权的本地凭据；已删除的账号视为废弃")
             self.update_auth2fa_input_stats()
             return
         self.save_settings(reload_tokens=False, notify=False)

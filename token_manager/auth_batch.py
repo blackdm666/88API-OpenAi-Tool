@@ -25,6 +25,9 @@ def plan_authorization(accounts, local_records, remotes):
             reason = '重复输入，已跳过'
         seen.add(key)
         matches = local_by_email.get(key, [])
+        if not matches:
+            skipped.append({'email': account.email, 'reason': '左侧本地凭据已删除，视为废弃账号'})
+            continue
         local = matches[0] if len(matches) == 1 else {'email': account.email}
         if len(matches) > 1:
             reason = '本地存在重复身份，需人工核对'
