@@ -126,9 +126,45 @@ def openai_plan_label(plan: str) -> str:
         "selfservebusinessprolite": "Business Premium",
         "team": "Business Standard",
         "free": "Free",
+        "chatgptfree": "Free",
+        "freetier": "Free",
         "enterprise": "Enterprise",
     }
     return mapping.get(normalized, "Unknown")
+
+
+def sub2api_plan_type(record: dict[str, Any] | None) -> str:
+    """Read the OpenAI subscription marker from a Sub2API account DTO.
+
+    Sub2API keeps the canonical OpenAI value in ``credentials.plan_type``.
+    Some server versions also expose a top-level or ``extra`` copy, while
+    shadow accounts expose ``parent_plan_type``.  Keep the precedence aligned
+    with the Sub2API admin UI and return an empty string when no marker is
+    available; callers can then distinguish an unknown plan from a known one.
+    """
+    if not isinstance(record, dict):
+        return ""
+    credentials = record.get("credentials") or {}
+    extra = record.get("extra") or {}
+    if not isinstance(credentials, dict):
+        credentials = {}
+    if not isinstance(extra, dict):
+        extra = {}
+    for value in (
+        credentials.get("plan_type"),
+        record.get("parent_plan_type"),
+        record.get("plan_type"),
+        extra.get("plan_type"),
+        record.get("workspace_plan_type"),
+        credentials.get("workspace_plan_type"),
+        extra.get("workspace_plan_type"),
+        credentials.get("subscription_tier"),
+        extra.get("subscription_tier"),
+    ):
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
 
 
 def plan_directory_name(plan: str) -> str:

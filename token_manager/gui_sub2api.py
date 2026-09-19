@@ -17,7 +17,7 @@ from .integrations import (
 from .usage_display import snapshot_usage, quota_cell, sort_account_rows, scheduling_cell, concurrency_cell
 from .recovery_support import remote_health
 from .sub2api_policy import normalize_server_url, match_remote, default_list_group_ids
-from .utils import openai_plan_label
+from .utils import openai_plan_label, sub2api_plan_type
 from .gui_sub2api_settings import FINGERPRINTS, WS_MODES
 
 from .services import (
@@ -133,12 +133,16 @@ class GUISub2APIMixin:
         return f"{text[: max_len - 1]}…"
 
     def _sub2api_account_label(self, record: dict[str, Any]) -> str:
+        remote_label = openai_plan_label(sub2api_plan_type(record))
+        if remote_label != "Unknown":
+            return remote_label
         email = str(record.get('email') or '').strip().lower()
         local = self.local_record_index.get(email)
         if local:
-            return self.plan_label(local)
-        raw = record.get('plan_type') or record.get('parent_plan_type') or (record.get('extra') or {}).get('plan_type')
-        return openai_plan_label(raw)
+            local_label = self.plan_label(local)
+            if local_label != "Unknown":
+                return local_label
+        return remote_label
 
     def _sub2api_flags_text(self, record: dict[str, Any]) -> str:
         flags: list[str] = []

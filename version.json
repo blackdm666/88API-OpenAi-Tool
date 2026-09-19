@@ -1,6 +1,6 @@
 {
   "name": "88API号池自动维护工具",
-  "version": "2.2.0-88api.46",
+  "version": "2.2.0-88api.47",
   "description": "本地OpenAI账号与Sub2API远端管理工具",
   "author": "Based on Reverse Engineering",
   "license": "Personal Use Only",
@@ -358,6 +358,14 @@
       "date": "2026-09-19",
       "changes": [
         "修复Windows下无箭头滚动条宽度塌缩为1像素，恢复左右列表可见拖动区域"
+      ]
+    },
+    "2.2.0-88api.47": {
+      "date": "2026-09-19",
+      "changes": [
+        "修复Sub2API导入及远端列表漏读credentials.plan_type，Free账号不再错误显示Unknown",
+        "本地标签未知时使用唯一匹配的Sub2API套餐标签作为显示回退",
+        "兼容顶层、凭据、父账号及workspace套餐字段，保持Free与授权/调度状态分开判断"
       ]
     }
   }

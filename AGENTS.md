@@ -74,3 +74,5 @@
 - 2.2.0-88api.33：导入导出页移除重复的 Sub2API 占位内容并将四个主要按钮整理为一排；远端账号支持多选后统一编辑运营参数，空白字段保持原值。
 
 - 2.2.0-88api.34：本地凭据、导出文件和配置统一使用 `C:\Users\Administrator\Documents\sub2api`；兼容旧桌面目录并迁移加密 2FA 资料到 outputs。
+
+- 2.2.0-88api.47：Sub2API账号标签读取官方DTO的`credentials.plan_type`，并兼容顶层、父账号、extra与workspace字段；从Sub2API导入时保留套餐标签，本地标签未知时可用唯一匹配远端标签回退。Free只表示套餐身份，不能替代401、429、调度和模型测试等存活判断。

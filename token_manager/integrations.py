@@ -370,6 +370,19 @@ def fetch_sub2api_accounts(
             if not group_names:
                 group_names = [group_name_by_id.get(safe_int(group_id), f"#{safe_int(group_id)}") for group_id in group_ids if safe_int(group_id) > 0]
             email = str(credentials.get("email") or extra.get("email") or item.get("name") or "").strip()
+            plan_type = str(
+                credentials.get("plan_type")
+                or item.get("plan_type")
+                or extra.get("plan_type")
+                or ""
+            ).strip()
+            parent_plan_type = str(item.get("parent_plan_type") or "").strip()
+            workspace_plan_type = str(
+                item.get("workspace_plan_type")
+                or credentials.get("workspace_plan_type")
+                or extra.get("workspace_plan_type")
+                or ""
+            ).strip()
             records.append(
                 {
                     "id": safe_int(item.get("id")),
@@ -402,6 +415,13 @@ def fetch_sub2api_accounts(
                     "credentials": credentials,
                     "credentials_status": item.get('credentials_status') or {},
                     "extra": extra,
+                    # Keep the non-secret identity fields returned by
+                    # Sub2API.  OAuth DTOs normally carry plan_type under
+                    # credentials; dropping it makes Free accounts render as
+                    # Unknown in the desktop client.
+                    "plan_type": plan_type,
+                    "parent_plan_type": parent_plan_type,
+                    "workspace_plan_type": workspace_plan_type,
                     "groups": groups,
                     "proxy": item.get("proxy") or {},
                 }

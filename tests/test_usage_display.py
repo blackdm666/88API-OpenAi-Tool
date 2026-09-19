@@ -3,7 +3,8 @@ from datetime import datetime, timezone
 from unittest.mock import patch
 
 from token_manager.usage_display import quota_cell, snapshot_usage, usage_details, sort_account_rows, scheduling_cell, concurrency_cell
-from token_manager.utils import openai_plan_label
+from token_manager.utils import openai_plan_label, sub2api_plan_type
+from token_manager.converters import from_sub2api_payload
 from token_manager.integrations import fetch_sub2api_accounts, fetch_sub2api_usage
 from token_manager.config import default_config
 from test_sub2api import response
@@ -19,6 +20,36 @@ class UsageTest(unittest.TestCase):
         }
         for value, expected in cases.items():
             self.assertEqual(openai_plan_label(value), expected)
+
+    def test_sub2api_plan_type_reads_all_supported_account_shapes(self):
+        cases = [
+            ({"plan_type": "free"}, "free"),
+            ({"credentials": {"plan_type": "free"}}, "free"),
+            ({"parent_plan_type": "free"}, "free"),
+            ({"extra": {"plan_type": "free"}}, "free"),
+            ({"credentials": {"workspace_plan_type": "free"}}, "free"),
+            ({}, ""),
+        ]
+        for record, expected in cases:
+            with self.subTest(record=record):
+                self.assertEqual(sub2api_plan_type(record), expected)
+
+    def test_sub2api_free_import_keeps_subscription_label(self):
+        record = from_sub2api_payload(
+            {
+                "name": "free@example.test",
+                "platform": "openai",
+                "type": "oauth",
+                "credentials": {
+                    "email": "free@example.test",
+                    "plan_type": "free",
+                    "access_token": "access",
+                    "refresh_token": "refresh",
+                },
+            }
+        )
+        self.assertEqual(record["subscription"]["plan_type"], "free")
+        self.assertEqual(openai_plan_label(record["subscription"]["plan_type"]), "Free")
 
     def test_concurrency_cell_preserves_current_and_limit(self):
         self.assertEqual(concurrency_cell({'current_concurrency': 3, 'concurrency': 10}), '3 / 10')
@@ -100,6 +131,30 @@ class UsageTest(unittest.TestCase):
             )
             self.assertEqual(request.call_args.kwargs["params"]["sort_by"], "id")
             self.assertEqual(request.call_args.kwargs["params"]["sort_order"], "asc")
+
+    def test_server_plan_fields_are_preserved_for_label_rendering(self):
+        items = [
+            {
+                "id": 1,
+                "name": "free@example.test",
+                "platform": "openai",
+                "type": "oauth",
+                "credentials": {"plan_type": "free"},
+            },
+            {
+                "id": 2,
+                "name": "shadow@example.test",
+                "platform": "openai",
+                "type": "oauth",
+                "parent_plan_type": "free",
+            },
+        ]
+        with patch(
+            "token_manager.integrations._sub2api_request",
+            return_value=response({"items": items, "pages": 1}),
+        ):
+            rows = fetch_sub2api_accounts(default_config())
+        self.assertEqual([openai_plan_label(sub2api_plan_type(row)) for row in rows], ["Free", "Free"])
 
     def test_batch_usage_is_bounded_deduped_and_non_forced(self):
         with patch(

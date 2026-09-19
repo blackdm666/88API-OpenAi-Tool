@@ -9,7 +9,7 @@ from tkinter import filedialog, messagebox
 from .integrations import sub2api_upload_payload
 from .usage_display import quota_cell
 from .recovery_support import remote_health
-from .utils import openai_plan_label
+from .utils import openai_plan_label, sub2api_plan_type
 from .sub2api_policy import auth_failure_kind
 from .converters import from_local_payload, from_sub2api_payload
 from .services import export_organized_payloads, refresh_record, run_batch, sync_subscription, upload_record
@@ -208,7 +208,17 @@ class GUIRecordsMixin:
 
     def plan_label(self, record: dict[str, object]) -> str:
         subscription = record.get('subscription') or {}
-        return openai_plan_label(subscription.get('plan_type') or record.get('_plan'))
+        # The matched Sub2API DTO is authoritative for the account pool and
+        # follows the same plan_type definition as the remote admin UI.
+        try:
+            remote = self.local_remote_record(record)
+        except Exception:
+            remote = None
+        remote_label = openai_plan_label(sub2api_plan_type(remote))
+        if remote_label != "Unknown":
+            return remote_label
+        local_raw = subscription.get('plan_type') or record.get('_plan')
+        return openai_plan_label(local_raw)
 
     def selected_records(self) -> list[dict[str, object]]:
         selected = set(self.token_tree.selection())

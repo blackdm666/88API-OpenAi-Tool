@@ -87,6 +87,23 @@ def from_local_payload(payload: dict[str, Any]) -> dict[str, Any]:
 def from_sub2api_payload(payload: dict[str, Any]) -> dict[str, Any]:
     credentials = payload.get("credentials") or {}
     extra = payload.get("extra") or {}
+    plan_type = str(
+        credentials.get("plan_type")
+        or payload.get("parent_plan_type")
+        or payload.get("plan_type")
+        or extra.get("plan_type")
+        or credentials.get("workspace_plan_type")
+        or extra.get("workspace_plan_type")
+        or credentials.get("subscription_tier")
+        or extra.get("subscription_tier")
+        or ""
+    ).strip()
+    workspace_plan_type = str(
+        payload.get("workspace_plan_type")
+        or credentials.get("workspace_plan_type")
+        or extra.get("workspace_plan_type")
+        or ""
+    ).strip()
     return {
         "email": str(extra.get("email") or payload.get("name") or "").strip(),
         "access_token": str(credentials.get("access_token") or "").strip(),
@@ -99,5 +116,12 @@ def from_sub2api_payload(payload: dict[str, Any]) -> dict[str, Any]:
             "sub2api_group_ids": payload.get("group_ids") or [],
             "sub2api_concurrency": payload.get("concurrency"),
             "sub2api_priority": payload.get("priority"),
+        },
+        "subscription": {
+            "plan": plan_type,
+            "plan_type": plan_type,
+            "workspace_plan_type": workspace_plan_type,
+            "subscription_active_until": "",
+            "source": "sub2api" if plan_type else "unknown",
         },
     }
