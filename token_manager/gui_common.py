@@ -266,29 +266,35 @@ class GUICommonMixin:
         ):
             style.configure(
                 scrollbar_style,
-                background=self.palette["border_strong"],
+                # Keep the scrollbar visually subordinate to the account
+                # tables. In particular, do not turn the whole thumb bright
+                # blue when the pointer happens to pass over a non-scrollable
+                # list.
+                background="#cbd5e1",
                 troughcolor=self.palette["card_alt"],
-                bordercolor=self.palette["card_alt"],
-                lightcolor=self.palette["border_strong"],
-                darkcolor=self.palette["border_strong"],
+                bordercolor=self.palette["border"],
+                lightcolor="#cbd5e1",
+                darkcolor="#cbd5e1",
                 relief="flat",
                 borderwidth=0,
-                width=10,
+                width=7,
                 gripcount=0,
+                arrowsize=0,
+                sliderlength=36,
             )
             style.map(
                 scrollbar_style,
                 background=[
-                    ("pressed", self.palette["primary_hover"]),
-                    ("active", self.palette["primary"]),
+                    ("pressed", "#64748b"),
+                    ("active", "#94a3b8"),
                 ],
                 lightcolor=[
-                    ("pressed", self.palette["primary_hover"]),
-                    ("active", self.palette["primary"]),
+                    ("pressed", "#64748b"),
+                    ("active", "#94a3b8"),
                 ],
                 darkcolor=[
-                    ("pressed", self.palette["primary_hover"]),
-                    ("active", self.palette["primary"]),
+                    ("pressed", "#64748b"),
+                    ("active", "#94a3b8"),
                 ],
             )
         style.configure("TNotebook", background=self.palette["bg"], borderwidth=0)

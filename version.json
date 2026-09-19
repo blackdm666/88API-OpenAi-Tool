@@ -1,6 +1,6 @@
 {
   "name": "88API号池自动维护工具",
-  "version": "2.2.0-88api.43",
+  "version": "2.2.0-88api.44",
   "description": "本地OpenAI账号与Sub2API远端管理工具",
   "author": "Based on Reverse Engineering",
   "license": "Personal Use Only",
@@ -340,6 +340,12 @@
       "changes": [
         "修复左侧本地凭据列表选中行与7d用量进度条背景切换不同步",
         "左右账号列表及可滚动选择列表改用细轨道、无箭头的现代滚动条"
+      ]
+    },
+    "2.2.0-88api.44": {
+      "date": "2026-09-19",
+      "changes": [
+        "降低滚动条对比度，避免非滚动状态下出现醒目的蓝色整条边框"
       ]
     }
   }

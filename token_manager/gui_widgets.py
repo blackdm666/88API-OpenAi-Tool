@@ -5,7 +5,7 @@ from tkinter import ttk
 
 
 class ModernScrollbar(ttk.Scrollbar):
-    """Slim, arrowless scrollbar used by list and picker surfaces."""
+    """Slim, arrowless scrollbar that hides when its content fits."""
 
     def __init__(self, parent, *, orient=tk.VERTICAL, **kwargs):
         orientation = str(orient).lower()
@@ -15,7 +15,52 @@ class ModernScrollbar(ttk.Scrollbar):
             else "Modern.Vertical.TScrollbar"
         )
         kwargs.setdefault("style", style)
+        self._geometry = None
+        self._geometry_options = {}
+        self._hidden = False
         super().__init__(parent, orient=orient, **kwargs)
+
+    def grid(self, *args, **kwargs):
+        self._geometry = "grid"
+        self._geometry_options = dict(kwargs)
+        return super().grid(*args, **kwargs)
+
+    def pack(self, *args, **kwargs):
+        self._geometry = "pack"
+        self._geometry_options = dict(kwargs)
+        return super().pack(*args, **kwargs)
+
+    def set(self, first, last):
+        result = super().set(first, last)
+        try:
+            first_value = float(first)
+            last_value = float(last)
+            fits = first_value <= 0.0 and last_value >= 1.0
+        except (TypeError, ValueError):
+            fits = False
+        if fits:
+            self._hide_when_fits()
+        else:
+            self._show_when_needed()
+        return result
+
+    def _hide_when_fits(self):
+        if self._hidden or not self.winfo_ismapped():
+            return
+        if self._geometry == "grid":
+            super().grid_remove()
+        elif self._geometry == "pack":
+            super().pack_forget()
+        self._hidden = True
+
+    def _show_when_needed(self):
+        if not self._hidden:
+            return
+        if self._geometry == "grid":
+            super().grid(**self._geometry_options)
+        elif self._geometry == "pack":
+            super().pack(**self._geometry_options)
+        self._hidden = False
 
 
 def center_window(window, parent=None) -> None:
