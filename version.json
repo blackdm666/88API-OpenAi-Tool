@@ -1,6 +1,6 @@
 {
   "name": "88API号池自动维护工具",
-  "version": "2.2.0-88api.44",
+  "version": "2.2.0-88api.45",
   "description": "本地OpenAI账号与Sub2API远端管理工具",
   "author": "Based on Reverse Engineering",
   "license": "Personal Use Only",
@@ -346,6 +346,12 @@
       "date": "2026-09-19",
       "changes": [
         "降低滚动条对比度，避免非滚动状态下出现醒目的蓝色整条边框"
+      ]
+    },
+    "2.2.0-88api.45": {
+      "date": "2026-09-19",
+      "changes": [
+        "恢复账号列表滚动条显示，避免自动隐藏导致无法滚动"
       ]
     }
   }

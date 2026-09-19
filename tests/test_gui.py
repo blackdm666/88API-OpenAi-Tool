@@ -15,7 +15,7 @@ from token_manager.gui_widgets import (
 
 
 class LayoutTest(unittest.TestCase):
-    def test_modern_scrollbar_hides_when_content_fits(self):
+    def test_modern_scrollbar_remains_available_when_content_fits(self):
         root = tk.Tk()
         try:
             scrollbar = ModernScrollbar(root, orient="vertical")
@@ -23,13 +23,13 @@ class LayoutTest(unittest.TestCase):
             root.update()
             scrollbar.set("0", "1")
             root.update_idletasks()
-            self.assertFalse(scrollbar.winfo_ismapped())
+            self.assertTrue(scrollbar.winfo_ismapped())
             scrollbar.set("0", "0.6")
             root.update_idletasks()
             self.assertTrue(scrollbar.winfo_ismapped())
             scrollbar.set("0", "1")
             root.update_idletasks()
-            self.assertFalse(scrollbar.winfo_ismapped())
+            self.assertTrue(scrollbar.winfo_ismapped())
         finally:
             root.destroy()
 
