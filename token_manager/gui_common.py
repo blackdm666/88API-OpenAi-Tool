@@ -232,6 +232,65 @@ class GUICommonMixin:
             foreground=[("selected", self.palette["text"])],
         )
         style.map("Treeview.Heading", background=[("active", self.palette["accent_soft"])])
+        style.layout(
+            "Modern.Vertical.TScrollbar",
+            [
+                (
+                    "Vertical.Scrollbar.trough",
+                    {
+                        "sticky": "ns",
+                        "children": [
+                            ("Vertical.Scrollbar.thumb", {"sticky": "nswe"})
+                        ],
+                    },
+                )
+            ],
+        )
+        style.layout(
+            "Modern.Horizontal.TScrollbar",
+            [
+                (
+                    "Horizontal.Scrollbar.trough",
+                    {
+                        "sticky": "ew",
+                        "children": [
+                            ("Horizontal.Scrollbar.thumb", {"sticky": "nswe"})
+                        ],
+                    },
+                )
+            ],
+        )
+        for scrollbar_style in (
+            "Modern.Vertical.TScrollbar",
+            "Modern.Horizontal.TScrollbar",
+        ):
+            style.configure(
+                scrollbar_style,
+                background=self.palette["border_strong"],
+                troughcolor=self.palette["card_alt"],
+                bordercolor=self.palette["card_alt"],
+                lightcolor=self.palette["border_strong"],
+                darkcolor=self.palette["border_strong"],
+                relief="flat",
+                borderwidth=0,
+                width=10,
+                gripcount=0,
+            )
+            style.map(
+                scrollbar_style,
+                background=[
+                    ("pressed", self.palette["primary_hover"]),
+                    ("active", self.palette["primary"]),
+                ],
+                lightcolor=[
+                    ("pressed", self.palette["primary_hover"]),
+                    ("active", self.palette["primary"]),
+                ],
+                darkcolor=[
+                    ("pressed", self.palette["primary_hover"]),
+                    ("active", self.palette["primary"]),
+                ],
+            )
         style.configure("TNotebook", background=self.palette["bg"], borderwidth=0)
         style.configure(
             "TNotebook.Tab",

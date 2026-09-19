@@ -17,7 +17,7 @@ from .constants import DEFAULT_AUTH_TIMEOUT_SECONDS
 from .sub2api_policy import proxy_candidates
 from .oauth import browser_assisted_authorize, exchange_callback, generate_oauth_start
 from .services import refresh_record
-from .gui_widgets import center_window
+from .gui_widgets import ModernScrollbar, center_window
 
 
 def saved_credential_lines(accounts: dict, allowed_emails=None) -> str:
@@ -76,9 +76,9 @@ class GUIAuthMixin:
         tree.heading('email', text='已保存的账号邮箱')
         tree.column('email', width=480)
         tree.grid(row=2, column=0, sticky='nsew')
-        scrollbar = ttk.Scrollbar(frame, orient='vertical', command=tree.yview)
+        scrollbar = ModernScrollbar(frame, orient='vertical', command=tree.yview)
         tree.configure(yscrollcommand=scrollbar.set)
-        scrollbar.grid(row=2, column=1, sticky='ns')
+        scrollbar.grid(row=2, column=1, sticky='ns', padx=(4, 0))
         count = tk.StringVar()
         def populate(*_):
             selected = set(tree.selection())

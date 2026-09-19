@@ -4,7 +4,7 @@ import tkinter as tk
 from tkinter import scrolledtext, ttk
 
 from .constants import MAX_REFRESH_WORKERS, MAX_UPLOAD_WORKERS
-from .gui_widgets import UsageTreeview, HoverTooltip
+from .gui_widgets import HoverTooltip, ModernScrollbar, UsageTreeview
 
 
 class GUILayoutMixin:
@@ -154,13 +154,13 @@ class GUILayoutMixin:
         self.token_tree.column("status", width=96, stretch=False, anchor=tk.CENTER)
         self.token_tree.column("remaining", width=120, stretch=False, anchor=tk.CENTER)
         self.token_tree.column("upload", width=150, stretch=True)
-        scrollbar_y = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.token_tree.yview)
-        scrollbar_x = ttk.Scrollbar(list_frame, orient=tk.HORIZONTAL, command=self.token_tree.xview)
+        scrollbar_y = ModernScrollbar(list_frame, orient=tk.VERTICAL, command=self.token_tree.yview)
+        scrollbar_x = ModernScrollbar(list_frame, orient=tk.HORIZONTAL, command=self.token_tree.xview)
         self.token_tree.configure(yscrollcommand=scrollbar_y.set, xscrollcommand=scrollbar_x.set)
         self.token_tree.grid(row=0, column=0, sticky="nsew")
-        scrollbar_y.grid(row=0, column=1, sticky="ns")
-        scrollbar_x.grid(row=1, column=0, sticky="ew")
-        self.token_tree.bind("<<TreeviewSelect>>", self.on_selection_changed)
+        scrollbar_y.grid(row=0, column=1, sticky="ns", padx=(4, 0))
+        scrollbar_x.grid(row=1, column=0, sticky="ew", pady=(4, 0))
+        self.token_tree.bind("<<TreeviewSelect>>", self.on_selection_changed, add="+")
         self.token_tree.bind("<Button-3>", self.show_token_context_menu, add="+")
         self.token_tree.tag_configure("expired", foreground="#a94438")
         self.token_tree.tag_configure("warning", foreground=self.palette["accent"])
@@ -420,10 +420,12 @@ class GUILayoutMixin:
         for key,label,width in [('id','ID',40),('email','账号名称',105),('groups','账号标签',105),('status','状态',55),('scheduling','调度',70),('concurrency','并发',65),('quota7','7d已用',60),('priority','优先级',60),('error','错误摘要',85)]:
             self.sub2api_tree.heading(key,text=label+(' ↑' if key=='id' else ''),command=lambda k=key:self.sort_sub2api_accounts(k))
             self.sub2api_tree.column(key,width=width,minwidth=40,stretch=key in ('email','groups','error'),anchor=tk.CENTER if key in ('groups','status','scheduling','concurrency','quota7','priority') else tk.W)
-        y=ttk.Scrollbar(table,orient='vertical',command=self.sub2api_tree.yview)
-        x=ttk.Scrollbar(table,orient='horizontal',command=self.sub2api_tree.xview)
+        y=ModernScrollbar(table,orient='vertical',command=self.sub2api_tree.yview)
+        x=ModernScrollbar(table,orient='horizontal',command=self.sub2api_tree.xview)
         self.sub2api_tree.configure(yscrollcommand=y.set,xscrollcommand=x.set)
-        self.sub2api_tree.grid(row=0,column=0,sticky='nsew');y.grid(row=0,column=1,sticky='ns');x.grid(row=1,column=0,sticky='ew')
+        self.sub2api_tree.grid(row=0,column=0,sticky='nsew')
+        y.grid(row=0,column=1,sticky='ns',padx=(4,0))
+        x.grid(row=1,column=0,sticky='ew',pady=(4,0))
         self.sub2api_tree.bind('<Button-3>', self.show_sub2api_context_menu, add='+')
         self.sub2api_tree.tag_configure('error',foreground='#a94438')
         self.sub2api_tree.tag_configure('invalidated',foreground='#a94438')

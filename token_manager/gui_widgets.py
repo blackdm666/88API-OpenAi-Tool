@@ -4,6 +4,20 @@ import tkinter as tk
 from tkinter import ttk
 
 
+class ModernScrollbar(ttk.Scrollbar):
+    """Slim, arrowless scrollbar used by list and picker surfaces."""
+
+    def __init__(self, parent, *, orient=tk.VERTICAL, **kwargs):
+        orientation = str(orient).lower()
+        style = (
+            "Modern.Horizontal.TScrollbar"
+            if orientation in {"horizontal", "h"}
+            else "Modern.Vertical.TScrollbar"
+        )
+        kwargs.setdefault("style", style)
+        super().__init__(parent, orient=orient, **kwargs)
+
+
 def center_window(window, parent=None) -> None:
     """Place a newly created window at the center of its owner."""
     owner = parent or getattr(window, "master", None)
@@ -263,9 +277,9 @@ class CheckList(ttk.Frame):
         super().__init__(parent)
         self.variables = {}
         canvas = tk.Canvas(self, height=180, highlightthickness=0, bg="#ffffff")
-        scroll = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
+        scroll = ModernScrollbar(self, orient="vertical", command=canvas.yview)
         canvas.configure(yscrollcommand=scroll.set)
-        scroll.pack(side="right", fill="y")
+        scroll.pack(side="right", fill="y", padx=(4, 0))
         canvas.pack(side="left", fill="both", expand=True)
         body = ttk.Frame(canvas, padding=8, style="Card.TFrame")
         item = canvas.create_window(0, 0, anchor="nw", window=body)

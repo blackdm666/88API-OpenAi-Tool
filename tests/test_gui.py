@@ -5,7 +5,13 @@ from unittest.mock import patch
 
 from token_manager.config import default_config
 from token_manager.gui import TokenManagerGUI
-from token_manager.gui_widgets import CheckList, HoverTooltip, UsageTreeview, center_window
+from token_manager.gui_widgets import (
+    CheckList,
+    HoverTooltip,
+    ModernScrollbar,
+    UsageTreeview,
+    center_window,
+)
 
 
 class LayoutTest(unittest.TestCase):
@@ -84,6 +90,10 @@ class LayoutTest(unittest.TestCase):
                 ):
                     vault.return_value.load.return_value = {}
                     app = TokenManagerGUI(root)
+                    def descendants(widget):
+                        for child in widget.winfo_children():
+                            yield child
+                            yield from descendants(child)
                     root.geometry("1280x800+0+0")
                     root.deiconify()
                     root.update()
@@ -155,6 +165,47 @@ class LayoutTest(unittest.TestCase):
                     bars=[b for b in app.sub2api_tree._bar_widgets if b.winfo_ismapped()]
                     self.assertTrue(bars)
                     self.assertTrue(any(b.find_all() for b in bars))
+                    app.token_tree.insert(
+                        "",
+                        "end",
+                        iid="local-account",
+                        values=(
+                            "local@example.test",
+                            "Plus",
+                            "56.0%",
+                            "未过期",
+                            "1小时",
+                            "已上传",
+                            "正常",
+                        ),
+                    )
+                    root.update()
+                    app.token_tree.selection_set("local-account")
+                    root.update()
+                    local_bar = next(
+                        bar
+                        for bar in app.token_tree._bar_widgets
+                        if bar.winfo_ismapped()
+                    )
+                    self.assertEqual(local_bar.cget("background"), app.palette["primary_soft"])
+                    modern_scrollbars = [
+                        widget
+                        for widget in descendants(app.account_panel)
+                        if isinstance(widget, ModernScrollbar)
+                    ]
+                    self.assertEqual(len(modern_scrollbars), 2)
+                    self.assertEqual(
+                        {widget.cget("style") for widget in modern_scrollbars},
+                        {
+                            "Modern.Horizontal.TScrollbar",
+                            "Modern.Vertical.TScrollbar",
+                        },
+                    )
+                    style = __import__('tkinter.ttk', fromlist=['Style']).Style(root)
+                    vertical_layout = style.layout("Modern.Vertical.TScrollbar")
+                    horizontal_layout = style.layout("Modern.Horizontal.TScrollbar")
+                    self.assertNotIn("arrow", str(vertical_layout).lower())
+                    self.assertNotIn("arrow", str(horizontal_layout).lower())
                     app.open_sub2api_upload_settings()
                     root.update_idletasks()
                     dialogs = [
@@ -168,10 +219,6 @@ class LayoutTest(unittest.TestCase):
                         'proxies':[{'id':8,'name':'proxy A','status':'active'},{'id':9,'name':'proxy B','status':'active'}]}, variables)
                     root.update_idletasks()
                     picker = next(w for w in owner.winfo_children() if isinstance(w,tk.Toplevel))
-                    def descendants(widget):
-                        for child in widget.winfo_children():
-                            yield child
-                            yield from descendants(child)
                     proxy_checklist = next(w for w in descendants(picker) if isinstance(w,CheckList) and 9 in w.variables)
                     proxy_checklist.variables[9].set(True)
                     next(w for w in descendants(picker) if w.winfo_class()=='TButton' and w.cget('text')=='应用选择').invoke()
@@ -204,7 +251,6 @@ class LayoutTest(unittest.TestCase):
                     checklist.variables[2].set(False)
                     self.assertEqual(checklist.selected(), [24])
                     checklist.destroy()
-                    style = __import__('tkinter.ttk', fromlist=['Style']).Style(root)
                     self.assertEqual(style.lookup('TCombobox', 'selectforeground', ('readonly',)), app.palette['text'])
                     sample = __import__('tkinter.ttk', fromlist=['Combobox']).Combobox(root, values=['上下文池','关闭'], state='readonly')
                     popup = root.tk.call('ttk::combobox::PopdownWindow', str(sample))
