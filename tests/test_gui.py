@@ -222,8 +222,39 @@ class LayoutTest(unittest.TestCase):
                     style = __import__('tkinter.ttk', fromlist=['Style']).Style(root)
                     vertical_layout = style.layout("Modern.Vertical.TScrollbar")
                     horizontal_layout = style.layout("Modern.Horizontal.TScrollbar")
-                    self.assertNotIn("arrow", str(vertical_layout).lower())
-                    self.assertNotIn("arrow", str(horizontal_layout).lower())
+                    self.assertIn("thumb", str(vertical_layout).lower())
+                    self.assertIn("thumb", str(horizontal_layout).lower())
+                    vertical_scrollbar = next(
+                        widget
+                        for widget in modern_scrollbars
+                        if "Vertical" in widget.cget("style")
+                    )
+                    horizontal_scrollbar = next(
+                        widget
+                        for widget in modern_scrollbars
+                        if "Horizontal" in widget.cget("style")
+                    )
+                    self.assertGreaterEqual(vertical_scrollbar.winfo_width(), 8)
+                    self.assertGreaterEqual(horizontal_scrollbar.winfo_height(), 8)
+                    remote_scrollbars = [
+                        widget
+                        for widget in descendants(app.sub2api_tab)
+                        if isinstance(widget, ModernScrollbar)
+                    ]
+                    self.assertEqual(len(remote_scrollbars), 2)
+                    remote_vertical = next(
+                        widget
+                        for widget in remote_scrollbars
+                        if "Vertical" in widget.cget("style")
+                    )
+                    remote_horizontal = next(
+                        widget
+                        for widget in remote_scrollbars
+                        if "Horizontal" in widget.cget("style")
+                    )
+                    self.assertGreaterEqual(remote_vertical.winfo_width(), 8)
+                    self.assertGreaterEqual(remote_horizontal.winfo_height(), 8)
+                    self.assertLess(app.sub2api_tree.yview()[1], 1.0)
                     app.open_sub2api_upload_settings()
                     root.update_idletasks()
                     dialogs = [

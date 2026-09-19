@@ -234,31 +234,11 @@ class GUICommonMixin:
         style.map("Treeview.Heading", background=[("active", self.palette["accent_soft"])])
         style.layout(
             "Modern.Vertical.TScrollbar",
-            [
-                (
-                    "Vertical.Scrollbar.trough",
-                    {
-                        "sticky": "ns",
-                        "children": [
-                            ("Vertical.Scrollbar.thumb", {"sticky": "nswe"})
-                        ],
-                    },
-                )
-            ],
+            style.layout("Vertical.TScrollbar"),
         )
         style.layout(
             "Modern.Horizontal.TScrollbar",
-            [
-                (
-                    "Horizontal.Scrollbar.trough",
-                    {
-                        "sticky": "ew",
-                        "children": [
-                            ("Horizontal.Scrollbar.thumb", {"sticky": "nswe"})
-                        ],
-                    },
-                )
-            ],
+            style.layout("Horizontal.TScrollbar"),
         )
         for scrollbar_style in (
             "Modern.Vertical.TScrollbar",
@@ -270,31 +250,38 @@ class GUICommonMixin:
                 # tables. In particular, do not turn the whole thumb bright
                 # blue when the pointer happens to pass over a non-scrollable
                 # list.
-                background="#cbd5e1",
+                background="#b8c5d4",
                 troughcolor=self.palette["card_alt"],
                 bordercolor=self.palette["border"],
-                lightcolor="#cbd5e1",
-                darkcolor="#cbd5e1",
+                lightcolor="#b8c5d4",
+                darkcolor="#b8c5d4",
+                arrowcolor="#b8c5d4",
                 relief="flat",
                 borderwidth=0,
-                width=7,
                 gripcount=0,
-                arrowsize=0,
+                # The clam theme calculates the real scrollbar thickness from
+                # its arrow elements. Removing them collapses the widget to
+                # one pixel on Windows, so retain compact muted arrows.
+                arrowsize=10,
                 sliderlength=36,
             )
             style.map(
                 scrollbar_style,
                 background=[
                     ("pressed", "#64748b"),
-                    ("active", "#94a3b8"),
+                    ("active", "#8fa0b4"),
                 ],
                 lightcolor=[
                     ("pressed", "#64748b"),
-                    ("active", "#94a3b8"),
+                    ("active", "#8fa0b4"),
                 ],
                 darkcolor=[
                     ("pressed", "#64748b"),
-                    ("active", "#94a3b8"),
+                    ("active", "#8fa0b4"),
+                ],
+                arrowcolor=[
+                    ("pressed", "#64748b"),
+                    ("active", "#8fa0b4"),
                 ],
             )
         style.configure("TNotebook", background=self.palette["bg"], borderwidth=0)
