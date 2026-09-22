@@ -1,15 +1,15 @@
 {
   "schema": 1,
   "channel": "stable",
-  "version": "2.3.4",
-  "download_url": "https://test.88api.ai/downloads/openai-token-manager/88API-号池自动维护工具-v2.3.4.exe",
-  "release_url": "",
-  "sha256": "a834a32a68d3cc1b03170ae7f94d6af1f012affa70e29b229faf584f9542213a",
-  "size": 21660334,
+  "version": "2.3.10",
+  "download_url": "https://test.88api.ai/downloads/openai-token-manager/88API-号池自动维护工具-v2.3.10.exe",
+  "release_url": "https://github.com/blackdm666/88API-OpenAi-Tool/tree/main",
+  "sha256": "de642decedd597db437363d24374bb30477d6cbda0e0e158e87fda833bc56997",
+  "size": 21667101,
   "notes": [
-    "左侧凭证区新增移除账号（保留远端）",
-    "上传状态和Sub2API监控状态简化显示",
-    "速刷号购买入口固定打开指定页面"
+    "维护规则底部增加 VX 和技术交流群联系方式",
+    "移除软件接口代理，Sub2API 管理接口固定直连",
+    "OAuth/2FA 授权代理继续独立保留"
   ],
   "mandatory": false
 }
