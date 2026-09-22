@@ -6,9 +6,10 @@ from unittest.mock import Mock, patch
 
 from token_manager.config import default_config
 from token_manager.credential_vault import CredentialVault
-from token_manager.maintenance import recovery_cycle
+from token_manager.maintenance import has_recovery_candidates, recovery_cycle
 from token_manager.recovery_support import (authorize_saved_account, NeedsUser,
     remote_health, test_sub2api_account as run_probe)
+from token_manager.gui_sub2api_settings import maintenance_rules_text
 from token_manager.store import TokenStore
 from token_manager.integrations import get_sub2api_account_credentials
 from tools.auth_2fa_live import AuthAccount
@@ -69,14 +70,27 @@ class WorkflowTest(unittest.TestCase):
     def test_uploaded_account_is_auto_enrolled_without_monitor_toggle(self):
         local = self.store.load_all()[0]
         local['sub2api_recovery'] = {}
-        local['uploads'] = {}
+        local['uploads'] = {'sub2api': {'ok': True}}
         self.store.save_record(local, filename=local.get('_filename'))
+        self.assertTrue(has_recovery_candidates(self.store.load_all(), self.settings))
         result = recovery_cycle(self.store, self.settings)
         self.assertEqual(result['recovered'], 1)
         saved = self.store.load_all()[0]
         self.assertTrue(saved['sub2api_recovery']['enabled'])
         self.assertTrue(saved['sub2api_recovery']['auto_enrolled'])
         self.auth.assert_called_once()
+
+    def test_unique_remote_without_successful_upload_is_not_auto_enrolled(self):
+        local = self.store.load_all()[0]
+        local['sub2api_recovery'] = {}
+        local['uploads'] = {}
+        self.store.save_record(local, filename=local.get('_filename'))
+        self.assertFalse(has_recovery_candidates(self.store.load_all(), self.settings))
+        result = recovery_cycle(self.store, self.settings)
+        self.assertEqual(result['checked'], 0)
+        saved = self.store.load_all()[0]
+        self.assertFalse((saved.get('sub2api_recovery') or {}).get('enabled'))
+        self.auth.assert_not_called()
 
     def test_recreated_remote_row_is_rebound_before_recovery(self):
         local = self.store.load_all()[0]
@@ -134,6 +148,17 @@ class WorkflowTest(unittest.TestCase):
         self.probe.assert_called_once()
         self.schedule.assert_called_once()
 
+    def test_healthy_active_account_is_not_rescheduled_without_recovery(self):
+        self.remote.update(status='active', error_message='', schedulable=False)
+        recovery_cycle(self.store, self.settings)
+        self.schedule.assert_not_called()
+        self.auth.assert_not_called()
+        self.probe.assert_not_called()
+        self.assertEqual(
+            self.store.load_all()[0]['sub2api_recovery']['status'],
+            '已启用·停调度',
+        )
+
     def test_missing_material_resumes_after_vault_save(self):
         self.vault.return_value.load.return_value={}
         recovery_cycle(self.store,self.settings)
@@ -173,6 +198,31 @@ class WorkflowTest(unittest.TestCase):
 
 
 class VaultAndProbeTest(unittest.TestCase):
+    def test_maintenance_rules_match_current_policy_and_config(self):
+        settings = default_config()
+        settings['auto_refresh_interval_seconds'] = 75
+        settings['auto_refresh_threshold_seconds'] = 420
+        text = maintenance_rules_text(settings)
+        for expected in (
+            '每 75 秒检查一次',
+            '剩余 1～420 秒',
+            'Sub2API 上传成功',
+            'status=error',
+            '普通 429',
+            '授权代理',
+            'apply-oauth-credentials',
+            '恢复/待验证阶段',
+            '每份新凭据最多一次',
+            '5/10/20 分钟',
+            '不重复登录',
+            '凭据冲突',
+            'Sub2API 管理接口固定直连',
+            '有好的功能建议可以反馈，会考虑添加进去。',
+            'VX：blackdm',
+            '技术交流群：1004036018',
+        ):
+            self.assertIn(expected, text)
+
     def test_official_export_is_id_scoped_and_checks_owner(self):
         detail={'id':42,'platform':'openai','type':'oauth','status':'active',
                 'credentials':{'email':'a@example.test','chatgpt_account_id':'workspace'}}

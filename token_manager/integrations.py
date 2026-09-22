@@ -9,7 +9,7 @@ import requests
 
 from .converters import to_sub2api_payload
 from .sub2api_policy import normalize_server_url, upload_options, match_remote, redact_error, assigned_proxy
-from .utils import build_requests_proxies, now_rfc3339, now_ts, safe_int
+from .utils import now_rfc3339, now_ts, safe_int
 
 
 def _response_error(response: requests.Response) -> str:
@@ -129,6 +129,12 @@ def _sub2api_request(
     require_auth: bool = True,
     **kwargs,
 ) -> requests.Response:
+    """Call the Sub2API admin API without a configurable client proxy.
+
+    ``proxy_url`` remains in the internal signature for compatibility with
+    service helpers and older callers, but it is intentionally ignored. The
+    only proxy users can configure is ``auth_proxy`` for OAuth/2FA flows.
+    """
     api_url = _sub2api_api_url(settings)
     token = _ensure_sub2api_auth(settings, proxy_url=proxy_url) if require_auth else ""
     extra_headers = dict(kwargs.pop("headers", {}) or {})
@@ -144,7 +150,8 @@ def _sub2api_request(
         headers=headers,
         timeout=request_timeout,
         verify=True,
-        proxies=build_requests_proxies(proxy_url),
+        # Explicitly disable Requests' environment proxy inheritance too.
+        proxies={"http": None, "https": None},
         **kwargs,
     )
     if response.status_code != 401 or not require_auth:

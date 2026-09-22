@@ -173,6 +173,10 @@ class Sub2APITest(Fixture, unittest.TestCase):
             )
             self.assertNotIn("Authorization", send.call_args.kwargs["headers"])
             self.assertTrue(send.call_args.kwargs["verify"])
+            self.assertEqual(
+                send.call_args.kwargs["proxies"],
+                {"http": None, "https": None},
+            )
             login.assert_not_called()
 
     def test_pagination_uses_total_when_pages_omitted(self):

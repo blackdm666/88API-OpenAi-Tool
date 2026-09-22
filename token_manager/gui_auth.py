@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 from copy import deepcopy
-from .maintenance import recovery_cycle
+from .maintenance import has_recovery_candidates, recovery_cycle
 from .credential_vault import CredentialVault
 
 import tkinter as tk
@@ -436,15 +436,6 @@ class GUIAuthMixin:
             return
         self.save_settings(reload_tokens=False, notify=False)
         settings = self.current_settings()
-        if (
-            not authorization_proxy(settings)
-            and str(settings.get("http_proxy") or "").strip()
-        ):
-            self.log(
-                "软件接口代理已设置，但授权代理为空；本次 OAuth/2FA 仍将直连。"
-                "请到“设置 → 基础”填写“授权代理”。",
-                "warning",
-            )
         mode = str(settings.get("auth_2fa_mode") or "protocol").strip().lower()
         workers = max(1, int(settings.get("auth_2fa_live_workers") or 1))
         # Smart authorization is a credential-repair workflow, not a
@@ -643,7 +634,7 @@ class GUIAuthMixin:
         self.maintenance_stop.clear()
         self.auto_refresh_running = True
         self.auto_refresh_button.config(text="停止自动维护")
-        self.log("自动维护已启动：本地到期检查 + 已开启账号的Sub2API恢复")
+        self.log("自动维护已启动：本地到期检查 + 监控/成功上传账号的Sub2API恢复")
         self.auto_refresh_thread = threading.Thread(target=self.auto_refresh_worker, daemon=True)
         self.auto_refresh_thread.start()
 
@@ -667,7 +658,10 @@ class GUIAuthMixin:
                             refresh_record(store, record, settings, proxy_url=authorization_proxy(settings), log_fn=self.log)
                         except Exception as exc:
                             self.log(f"本地到期刷新失败：{exc}", "error")
-                    if not self.maintenance_stop.is_set() and any((r.get("sub2api_recovery") or {}).get("enabled") for r in all_records):
+                    if (
+                        not self.maintenance_stop.is_set()
+                        and has_recovery_candidates(all_records, settings)
+                    ):
                         result = recovery_cycle(store, settings, log_fn=self.log, cancelled=self.maintenance_stop.is_set)
                         self.log(f"远端检查 {result['checked']}，恢复 {result['recovered']}，需关注 {result['blocked']}")
                         self.root.after(0, lambda snapshot=result['records']: self.update_recovery_snapshot(snapshot))

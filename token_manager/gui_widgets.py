@@ -38,6 +38,7 @@ def center_window(window, parent=None) -> None:
 
 class HoverTooltip:
     """Delayed help bubble for compact toolbar buttons."""
+
     def __init__(self, widget, text, *, delay=450):
         self.widget, self.text, self.delay = widget, str(text), delay
         self.tip = None
@@ -123,6 +124,69 @@ class HoverTooltip:
             except tk.TclError:
                 pass
             self._owner_unmap_bind = None
+
+
+class CheckmarkOption(ttk.Frame):
+    """Card-friendly Boolean option with an explicit tick instead of an X."""
+
+    def __init__(
+        self,
+        parent,
+        *,
+        text: str,
+        variable: tk.BooleanVar,
+        palette: dict,
+        wraplength: int = 640,
+    ):
+        super().__init__(parent, style="Card.TFrame")
+        self.variable = variable
+        self.palette = palette
+        self.indicator = tk.Label(
+            self,
+            width=2,
+            height=1,
+            font=("Segoe UI Symbol", 10, "bold"),
+            cursor="hand2",
+            padx=0,
+            pady=0,
+            takefocus=True,
+            highlightthickness=1,
+        )
+        self.indicator.pack(side=tk.LEFT, anchor=tk.N, pady=1)
+        self.label = ttk.Label(
+            self,
+            text=text,
+            style="Card.TLabel",
+            cursor="hand2",
+            wraplength=wraplength,
+        )
+        self.label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(9, 0))
+        for widget in (self, self.indicator, self.label):
+            widget.bind("<Button-1>", self._toggle, add="+")
+        self.indicator.bind("<space>", self._toggle, add="+")
+        self.indicator.bind("<Return>", self._toggle, add="+")
+        self._trace_id = self.variable.trace_add("write", self._refresh)
+        self._refresh()
+
+    def _toggle(self, _event=None):
+        self.variable.set(not bool(self.variable.get()))
+        return "break"
+
+    def _refresh(self, *_args) -> None:
+        selected = bool(self.variable.get())
+        self.indicator.configure(
+            text="✓" if selected else "",
+            bg=self.palette["primary"] if selected else self.palette["card"],
+            fg="#ffffff" if selected else self.palette["text"],
+            activebackground=(
+                self.palette["primary_hover"] if selected else self.palette["primary_soft"]
+            ),
+            activeforeground="#ffffff" if selected else self.palette["primary"],
+            highlightbackground=(
+                self.palette["primary"] if selected else self.palette["border_strong"]
+            ),
+            highlightcolor=self.palette["primary"],
+        )
 
 
 class UsageTreeview(ttk.Treeview):

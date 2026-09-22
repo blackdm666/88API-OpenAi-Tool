@@ -358,7 +358,7 @@ Sub2API 远端:
             messagebox.showerror("错误", "请先选择账号")
             return
         settings = self.current_settings()
-        proxy = settings.get("http_proxy", "")
+        proxy = authorization_proxy(settings)
         workers = min(len(records), int(settings.get("refresh_workers") or 1), 4)
 
         def worker():
@@ -394,7 +394,7 @@ Sub2API 远端:
         self.save_settings(reload_tokens=False, notify=False)
         target = self.upload_target_var.get().strip().lower()
         settings = dict(self.config)
-        proxy = settings.get("http_proxy", "")
+        proxy = ""
         workers = min(len(records), int(settings.get("upload_workers") or 1))
 
         def worker():
@@ -460,7 +460,7 @@ Sub2API 远端:
                 try:
                     remotes = fetch_sub2api_accounts(
                         settings,
-                        proxy_url=settings.get("http_proxy", ""),
+                        proxy_url="",
                         filters={"platform": "openai"},
                     )
                 except Exception as exc:
@@ -500,7 +500,7 @@ Sub2API 远端:
                 remote_result = delete_sub2api_remote_records(
                     [remote for _, remote in resolved],
                     settings,
-                    proxy_url=settings.get("http_proxy", ""),
+                    proxy_url="",
                     log_fn=self.log,
                 )
 
@@ -741,7 +741,7 @@ Sub2API 远端:
         self.status_var.set(f"{format_name} 预览已生成")
 
     def build_preview_from_var(self) -> None:
-        self.build_preview(self.preview_format_var.get().strip())
+        self.build_preview("Sub2API")
 
     def copy_preview(self) -> None:
         text = self.preview_text.get("1.0", tk.END).strip()

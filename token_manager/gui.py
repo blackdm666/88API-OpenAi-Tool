@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import threading
+import ctypes
 from pathlib import Path
 from typing import Any
 
@@ -57,15 +58,40 @@ def _apply_window_icon(root: tk.Tk) -> None:
             pass
 
 
+def _window_work_area(root: tk.Tk) -> tuple[int, int, int, int]:
+    """Return the primary desktop work area, excluding the Windows taskbar."""
+    if sys.platform == "win32":
+        class RECT(ctypes.Structure):
+            _fields_ = [
+                ("left", ctypes.c_long),
+                ("top", ctypes.c_long),
+                ("right", ctypes.c_long),
+                ("bottom", ctypes.c_long),
+            ]
+
+        rect = RECT()
+        try:
+            if ctypes.windll.user32.SystemParametersInfoW(
+                0x0030, 0, ctypes.byref(rect), 0
+            ):
+                return int(rect.left), int(rect.top), int(rect.right), int(rect.bottom)
+        except (AttributeError, OSError):
+            pass
+    return 0, 0, int(root.winfo_screenwidth()), int(root.winfo_screenheight())
+
+
 def _apply_window_geometry(root: tk.Tk) -> None:
-    screen_width = int(root.winfo_screenwidth())
-    screen_height = int(root.winfo_screenheight())
-    width = min(max(1280, int(screen_width * 0.9)), screen_width - 48)
-    height = min(max(820, int(screen_height * 0.88)), screen_height - 72)
-    pos_x = max(0, (screen_width - width) // 2)
-    pos_y = max(0, (screen_height - height) // 2)
+    left, top, right, bottom = _window_work_area(root)
+    work_width = max(1, right - left)
+    work_height = max(1, bottom - top)
+    max_width = max(640, work_width - 48)
+    max_height = max(560, work_height - 48)
+    width = min(max(1280, int(work_width * 0.9)), max_width)
+    height = min(max(820, int(work_height * 0.88)), max_height)
+    pos_x = left + max(0, (work_width - width) // 2)
+    pos_y = top + max(0, (work_height - height) // 2)
     root.geometry(f"{width}x{height}+{pos_x}+{pos_y}")
-    root.minsize(min(1100, screen_width - 48), min(660, screen_height - 72))
+    root.minsize(min(1100, max_width), min(660, max_height))
 
 
 class TokenManagerGUI(
@@ -121,7 +147,6 @@ class TokenManagerGUI(
 
         self.tokens_dir_var = tk.StringVar(value=str(self.config.get("tokens_dir") or ""))
         self.outputs_dir_var = tk.StringVar(value=str(self.config.get("outputs_dir") or ""))
-        self.proxy_var = tk.StringVar(value=str(self.config.get("http_proxy") or ""))
         self.auth_proxy_var = tk.StringVar(value=str(self.config.get("auth_proxy") or ""))
         self.refresh_workers_var = tk.IntVar(value=int(self.config.get("refresh_workers") or 6))
         self.upload_workers_var = tk.IntVar(value=int(self.config.get("upload_workers") or 4))
@@ -159,7 +184,6 @@ class TokenManagerGUI(
 
         self.upload_target_var = tk.StringVar(value='sub2api')
         self.import_source_var = tk.StringVar(value='Sub2API')
-        self.preview_format_var = tk.StringVar(value='Sub2API')
         self.auth2fa_mode_hint_var = tk.StringVar(value="")
         self.auth2fa_stats_var = tk.StringVar(value="待授权 0")
         self.auth2fa_output_var = tk.StringVar(value="")
@@ -204,6 +228,10 @@ class TokenManagerGUI(
 
 def run_app() -> None:
     root = tk.Tk()
+    root.withdraw()
     _apply_window_icon(root)
     TokenManagerGUI(root)
+    root.update_idletasks()
+    _apply_window_geometry(root)
+    root.deiconify()
     root.mainloop()

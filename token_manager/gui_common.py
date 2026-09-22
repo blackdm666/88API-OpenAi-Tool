@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import threading
 import time
 import traceback
@@ -7,7 +8,7 @@ import webbrowser
 from typing import Any
 
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 from .config import save_app_config
 from .constants import (
@@ -21,7 +22,7 @@ from .constants import (
 )
 from .store import TokenStore
 from .sub2api_policy import redact_error
-from .gui_widgets import HoverTooltip
+from .gui_widgets import HoverTooltip, center_window
 from .auth_proxy import authorization_proxy_pool
 from .updater import (
     UpdateInfo,
@@ -53,9 +54,9 @@ class GUICommonMixin:
             "刷新列表": "重新读取 Sub2API 远端账号、状态和已有额度快照。",
             "更新用量": "调用 Sub2API 用量接口更新选中账号的额度快照。",
             "Sub2API 设置": "配置服务器地址、管理员 API Key、上传参数和自动维护规则。",
-            "账号操作 ▾": "打开启停调度、刷新令牌和删除远端账号的操作菜单。",
+            "授权代理设置": "单独配置 OAuth/2FA 使用的代理；支持多行、HTTP、HTTPS、SOCKS5 和 SOCKS5H。",
             "检查更新": "从固定的 test.88api.ai 更新地址检查新版本。",
-            "保存设置": "保存当前设置；代理和连接参数会在后续任务中生效。",
+            "保存设置": "保存当前目录、授权代理和连接参数；Sub2API 管理接口固定直连。",
             "整理导出文件": "整理输出目录中的 Sub2API 文件并生成聚合导出文件。",
             "清理 Tokens": "清理重复或历史 Tokens 文件，只保留每个账号的最佳记录。",
             "清空日志": "清空软件内显示的运行日志，不影响账号和输出文件。",
@@ -68,7 +69,6 @@ class GUICommonMixin:
             "添加到左侧凭据": "把2FA资料对应的邮箱加入左侧，先显示待授权占位记录。",
             "查看本次结果": "查看最近一次批量授权的成功、失败、跳过原因和诊断路径。",
             "维护规则": "查看自动维护的触发条件、重试和安全边界。",
-            "远端 / 双栏": "隐藏或显示左侧本地凭据栏，扩大远端列表空间。",
         }
 
         def label_before(widget) -> str:
@@ -411,6 +411,91 @@ class GUICommonMixin:
     def log(self, message: str, level: str = "info") -> None:
         self.log_bus.write(level, redact_error(message))
 
+    def open_auth_proxy_settings(self) -> None:
+        """Edit the multiline OAuth/2FA proxy pool in a dedicated window."""
+        if self.is_running() or self.auto_refresh_running:
+            messagebox.showinfo(
+                "请稍候",
+                "请先停止自动维护并等待当前任务完成，再调整授权代理。",
+                parent=self.root,
+            )
+            return
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title("OAuth/2FA 授权代理设置")
+        dialog.geometry("760x470")
+        dialog.minsize(620, 360)
+        dialog.transient(self.root)
+        center_window(dialog, self.root)
+        dialog.grab_set()
+
+        frame = ttk.Frame(dialog, padding=14, style="Card.TFrame")
+        frame.pack(fill=tk.BOTH, expand=True)
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(2, weight=1)
+        ttk.Label(
+            frame,
+            text="OAuth授权代理（仅OAuth/2FA）",
+            style="Stats.TLabel",
+        ).grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            frame,
+            text=(
+                "支持多个代理：每行一个，也可以使用逗号或分号分隔。"
+                "支持 http、https、socks5、socks5h；留空表示直连。"
+            ),
+            style="CardSubtle.TLabel",
+            wraplength=700,
+        ).grid(row=1, column=0, sticky="ew", pady=(6, 8))
+        editor = scrolledtext.ScrolledText(
+            frame,
+            height=12,
+            wrap=tk.CHAR,
+            font=("Consolas", 10),
+            undo=True,
+            bg=self.palette["card"],
+            fg=self.palette["text"],
+            insertbackground=self.palette["text"],
+            selectbackground=self.palette["primary_soft"],
+            relief="flat",
+            highlightthickness=1,
+            highlightbackground=self.palette["border"],
+        )
+        editor.grid(row=2, column=0, sticky="nsew")
+        editor.insert("1.0", self.auth_proxy_var.get())
+        editor.focus_set()
+
+        buttons = ttk.Frame(frame, style="Card.TFrame")
+        buttons.grid(row=3, column=0, sticky="ew", pady=(12, 0))
+
+        def save():
+            value = editor.get("1.0", tk.END).strip()
+            candidate = self.current_settings()
+            candidate["auth_proxy"] = value
+            try:
+                authorization_proxy_pool(candidate)
+            except ValueError as exc:
+                messagebox.showerror("授权代理设置无效", str(exc), parent=dialog)
+                return
+            self.auth_proxy_var.set(value)
+            config = deepcopy(self.config)
+            config["auth_proxy"] = value
+            with self._state_lock:
+                self.config = config
+            save_app_config(config)
+            self.status_var.set("OAuth/2FA 授权代理已保存")
+            self.log("OAuth/2FA 授权代理设置已保存")
+            dialog.destroy()
+
+        ttk.Button(buttons, text="取消", command=dialog.destroy).pack(side=tk.RIGHT)
+        ttk.Button(
+            buttons,
+            text="保存代理",
+            command=save,
+            style="Primary.TButton",
+        ).pack(side=tk.RIGHT, padx=8)
+        self._install_default_tooltips(dialog)
+
     def open_account_purchase_page(self) -> None:
         """Open the fixed account-purchase page without exposing it as a setting."""
         try:
@@ -470,7 +555,9 @@ class GUICommonMixin:
             sub2api_existing.pop(legacy_key, None)
         config["tokens_dir"] = self.tokens_dir_var.get().strip()
         config["outputs_dir"] = self.outputs_dir_var.get().strip()
-        config["http_proxy"] = self.proxy_var.get().strip()
+        # Sub2API management requests intentionally use a direct connection.
+        # Remove the legacy setting when an older config is saved.
+        config.pop("http_proxy", None)
         config["auth_proxy"] = self.auth_proxy_var.get().strip()
         config["refresh_workers"] = max(1, min(MAX_REFRESH_WORKERS, _int(self.refresh_workers_var, 6)))
         config["upload_workers"] = max(1, min(MAX_UPLOAD_WORKERS, _int(self.upload_workers_var, 4)))

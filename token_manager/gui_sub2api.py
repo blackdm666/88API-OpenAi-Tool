@@ -100,7 +100,7 @@ class GUISub2APIMixin:
         self._concurrency_inflight = True
         def work():
             try:
-                records = fetch_sub2api_concurrency_snapshot(settings, proxy_url=settings.get('http_proxy', ''), filters={'platform': 'openai'})
+                records = fetch_sub2api_concurrency_snapshot(settings, proxy_url="", filters={'platform': 'openai'})
                 error = None
             except Exception as exc:
                 records, error = [], exc
@@ -332,7 +332,7 @@ class GUISub2APIMixin:
 
     def refresh_sub2api_accounts(self) -> None:
         settings = self.current_settings()
-        proxy = settings.get("http_proxy", "")
+        proxy = ""
         server = normalize_server_url(settings["integrations"]["sub2api"]["api_url"])
 
         def worker():
@@ -410,7 +410,7 @@ class GUISub2APIMixin:
         self._snapshot_inflight=True
         def work():
             try:
-                records=fetch_sub2api_accounts(settings,proxy_url=settings.get('http_proxy',''),filters={'platform':'openai'})
+                records=fetch_sub2api_accounts(settings,proxy_url="",filters={'platform':'openai'})
                 error=None
             except Exception as exc:
                 records=[];error=exc
@@ -455,7 +455,7 @@ class GUISub2APIMixin:
             return
         ids=[r['id'] for r in rows]
         def worker():
-            return fetch_sub2api_usage(settings,ids,proxy_url=settings.get('http_proxy',''))
+            return fetch_sub2api_usage(settings,ids,proxy_url="")
         def done(result):
             self.set_running(False,'用量更新完成')
             self.usage_sync_var.set('用量读取 '+time.strftime('%H:%M:%S')+' · 快照每60秒同步')
@@ -573,7 +573,7 @@ class GUISub2APIMixin:
                 },
             }
             settings = self.current_settings()
-            proxy = settings.get('http_proxy', '')
+            proxy = ""
             def worker():
                 return update_sub2api_account_settings(settings, record, updates, proxy_url=proxy)
             def done(result):
@@ -707,7 +707,7 @@ class GUISub2APIMixin:
                 return
 
             settings = self.current_settings()
-            proxy = settings.get("http_proxy", "")
+            proxy = ""
             account_ids = [int(record.get("id") or 0) for record in records]
 
             def worker():
@@ -743,7 +743,7 @@ class GUISub2APIMixin:
 
     def _refresh_sub2api_remote_records(self, records: list[dict[str, Any]], *, label: str) -> None:
         settings = self.current_settings()
-        proxy = settings.get("http_proxy", "")
+        proxy = ""
 
         def worker():
             return refresh_sub2api_remote_records(records, settings, proxy_url=proxy, log_fn=self.log)
@@ -768,7 +768,7 @@ class GUISub2APIMixin:
             messagebox.showerror("错误", "请先选择远端 Sub2API 账号")
             return
         settings = self.current_settings()
-        proxy = settings.get("http_proxy", "")
+        proxy = ""
 
         def worker():
             return set_sub2api_remote_records_schedulable(
@@ -806,7 +806,7 @@ class GUISub2APIMixin:
         if not messagebox.askyesno("确认", title):
             return
         settings = self.current_settings()
-        proxy = settings.get("http_proxy", "")
+        proxy = ""
 
         def worker():
             return delete_sub2api_remote_records(records, settings, proxy_url=proxy, log_fn=self.log)

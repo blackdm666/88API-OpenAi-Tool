@@ -84,7 +84,6 @@ def default_config() -> dict[str, Any]:
         "auto_refresh_interval_seconds": DEFAULT_AUTO_REFRESH_INTERVAL,
         "auto_refresh_threshold_seconds": DEFAULT_AUTO_REFRESH_THRESHOLD,
         "organize_tokens_by_plan": True,
-        "http_proxy": "",
         "auth_proxy": "",
         "open_browser_on_auto_auth": True,
         "auto_auth_timeout_seconds": 300,
@@ -133,6 +132,10 @@ def _migrate_legacy_config(raw: dict[str, Any]) -> dict[str, Any]:
     # The cloud update endpoint is first-party and intentionally not user
     # editable. Remove the old configurable field from migrated settings.
     migrated.pop("update_manifest_url", None)
+    # The former software-interface proxy was confusing and is no longer
+    # supported. Sub2API management requests are always direct; keep the
+    # dedicated auth_proxy setting for OAuth/2FA only.
+    migrated.pop("http_proxy", None)
     if migrated.get("custom_scan_root") and not migrated.get("tokens_dir"):
         root = Path(str(migrated["custom_scan_root"])).expanduser()
         migrated["tokens_dir"] = str(root if root.name.lower() == "tokens" else root / "tokens")

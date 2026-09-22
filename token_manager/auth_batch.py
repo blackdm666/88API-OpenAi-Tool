@@ -134,7 +134,9 @@ def run_checked_authorization(
         raise ValueError('2FA 输入包含无效行，请修正后再补授权')
     normalize_server_url((settings.get('integrations') or {}).get('sub2api', {}).get('api_url', ''))
     # No cached GUI state and no fallback to logging in everybody on API failure.
-    remotes = fetch_sub2api_accounts(settings, proxy_url=settings.get('http_proxy', ''), filters={'platform': 'openai'})
+    # Sub2API management traffic is intentionally direct. The only proxy used
+    # by this workflow is the dedicated OAuth/2FA proxy inside the runner.
+    remotes = fetch_sub2api_accounts(settings, proxy_url="", filters={'platform': 'openai'})
     eligible, skipped = plan_authorization(accounts, local_records, remotes)
     if log_fn:
         for item in skipped:

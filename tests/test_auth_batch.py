@@ -13,7 +13,7 @@ from token_manager.auth_batch import (
     run_checked_authorization,
 )
 from token_manager.auth_proxy import authorization_proxy, authorization_settings
-from token_manager.config import default_config
+from token_manager.config import _migrate_legacy_config, default_config
 from token_manager.credential_vault import CredentialVault
 from token_manager.gui_auth import GUIAuthMixin, saved_credential_lines
 from token_manager.store import TokenStore
@@ -36,6 +36,13 @@ def token_with_workspace(workspace):
 
 
 class AuthPreflightTest(unittest.TestCase):
+    def test_software_interface_proxy_is_not_a_user_setting(self):
+        self.assertNotIn("http_proxy", default_config())
+        migrated = _migrate_legacy_config(
+            {"http_proxy": "http://old-software-proxy.test:8080", "auth_proxy": ""}
+        )
+        self.assertNotIn("http_proxy", migrated)
+
     def test_result_view_exposes_reasons_without_tokens_or_proxy_credentials(self):
         result = authorization_result_view({
             'success_count': 1,

@@ -31,6 +31,24 @@ def remote_revision(remote):
     return token_revision(remote.get("credentials") or {})
 
 
+def has_recovery_candidates(records, settings):
+    """Return whether a maintenance cycle can inspect or auto-enroll anything."""
+    cfg = (settings.get("integrations") or {}).get("sub2api") or {}
+    auto_monitor = bool(cfg.get("auto_monitor_uploaded_accounts", True))
+    for record in records:
+        enrollment = record.get("sub2api_recovery") or {}
+        if enrollment.get("enabled"):
+            return True
+        if (
+            auto_monitor
+            and not enrollment.get("manual_disabled")
+            and enrollment.get("enabled") is not False
+            and ((record.get("uploads") or {}).get("sub2api") or {}).get("ok")
+        ):
+            return True
+    return False
+
+
 def recovery_cycle(store, settings, *, log_fn=None, cancelled=lambda: False):
     """Recover one enrolled identity at a time, with durable upload/test phases."""
     from .credential_vault import CredentialVault, credential_revision
@@ -43,7 +61,9 @@ def recovery_cycle(store, settings, *, log_fn=None, cancelled=lambda: False):
     server = normalize_server_url(cfg.get("api_url", ""))
     all_locals = store.load_all()
     result = {"checked": 0, "recovered": 0, "blocked": 0, "records": []}
-    proxy = settings.get("http_proxy", "")
+    # All Sub2API management and recovery API calls are direct. The dedicated
+    # auth_proxy below is only for OAuth/2FA and local token refresh.
+    proxy = ""
     auth_proxy = authorization_proxy(settings)
     remotes = fetch_sub2api_accounts(settings, proxy_url=proxy, filters={"platform": "openai"})
     result['records'] = remotes
@@ -53,16 +73,18 @@ def recovery_cycle(store, settings, *, log_fn=None, cancelled=lambda: False):
             enrollment = dict(record.get('sub2api_recovery') or {})
             if enrollment.get('enabled') or enrollment.get('manual_disabled') or enrollment.get('enabled') is False:
                 continue
+            upload_state = (record.get('uploads') or {}).get('sub2api') or {}
+            if not upload_state.get('ok'):
+                continue
             try:
                 remote = match_remote({**record, 'sub2api_recovery': {}}, remotes)
             except Exception:
                 remote = None
             if not remote:
                 continue
-            upload_state = (record.get('uploads') or {}).get('sub2api') or {}
-            message = '已根据上传记录自动纳入维护' if upload_state.get('ok') else '已根据唯一远端账号匹配自动纳入维护'
             enrollment.update(enabled=True, auto_enrolled=True, server=server,
-                              remote_id=remote['id'], status='待检查', message=message)
+                              remote_id=remote['id'], status='待检查',
+                              message='已根据成功上传记录和唯一远端匹配自动纳入维护')
             record['sub2api_recovery'] = enrollment
             store.save_record(record, filename=record.get('_filename'))
             locals_.append(record)
@@ -182,7 +204,6 @@ def recovery_cycle(store, settings, *, log_fn=None, cancelled=lambda: False):
                     raise NeedsUser('凭据读取后身份不一致，停止恢复')
                 remote = {**remote, **detail}
             observe(remote)
-            remote = ensure_schedulable(remote)
             kind = auth_failure_kind(remote)
             local_changed = bool(state.get('revision') and state['revision'] != revision)
             material_changed = state.get('credential_revision', '') != saved_revision

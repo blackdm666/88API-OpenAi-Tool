@@ -6,7 +6,7 @@
   <p>一个面向多账号运维场景的 OpenAI Token 管理工具</p>
 
   <p>
-    <img src="https://img.shields.io/badge/version-2.3.4-2563eb?style=for-the-badge" alt="version">
+    <img src="https://img.shields.io/badge/version-2.3.10-2563eb?style=for-the-badge" alt="version">
     <img src="https://img.shields.io/badge/python-3.11+-1f6feb?style=for-the-badge" alt="python">
     <img src="https://img.shields.io/badge/gui-tkinter-c47a22?style=for-the-badge" alt="gui">
     <img src="https://img.shields.io/badge/auth-protocol%20%7C%20browser-111827?style=for-the-badge" alt="auth">
