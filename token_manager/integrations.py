@@ -53,29 +53,6 @@ def _sub2api_api_key(settings: dict[str, Any]) -> str:
     return str(_sub2api_settings(settings).get("api_key") or "").strip()
 
 
-def _sub2api_admin_email(settings: dict[str, Any]) -> str:
-    return str(_sub2api_settings(settings).get("admin_email") or "").strip()
-
-
-def _sub2api_admin_password(settings: dict[str, Any]) -> str:
-    return str(_sub2api_settings(settings).get("admin_password") or "").strip()
-
-
-def _sub2api_access_token(settings: dict[str, Any]) -> str:
-    return str(_sub2api_settings(settings).get("access_token") or "").strip()
-
-
-def _sub2api_refresh_token(settings: dict[str, Any]) -> str:
-    return str(_sub2api_settings(settings).get("refresh_token") or "").strip()
-
-
-def _sub2api_token_expires_at(settings: dict[str, Any]) -> int:
-    try:
-        return int(_sub2api_settings(settings).get("token_expires_at") or 0)
-    except Exception:
-        return 0
-
-
 def _sub2api_base_headers(settings: dict[str, Any], *, token: str = "") -> dict[str, str]:
     headers = {
         "Accept": "application/json, text/plain, */*",
@@ -96,26 +73,6 @@ def _sub2api_public_headers() -> dict[str, str]:
     return {
         "Accept": "application/json, text/plain, */*",
     }
-
-
-def _sub2api_is_session_expired(settings: dict[str, Any]) -> bool:
-    expires_at = _sub2api_token_expires_at(settings)
-    return bool(expires_at and expires_at <= now_ts() + 30)
-
-
-def _set_sub2api_session(settings: dict[str, Any], data: dict[str, Any]) -> None:
-    integrations = settings.get("integrations")
-    if not isinstance(integrations, dict):
-        return
-    sub2api = integrations.get("sub2api")
-    if not isinstance(sub2api, dict):
-        return
-    access_token = str(data.get("access_token") or "").strip()
-    refresh_token = str(data.get("refresh_token") or sub2api.get("refresh_token") or "").strip()
-    expires_in = int(data.get("expires_in") or 0)
-    sub2api["access_token"] = access_token
-    sub2api["refresh_token"] = refresh_token
-    sub2api["token_expires_at"] = now_ts() + max(60, expires_in - 30) if access_token and expires_in > 0 else 0
 
 
 def _sub2api_response_json(response: requests.Response) -> Any:
@@ -150,78 +107,17 @@ def _sub2api_datetime_text(value: Any) -> str:
 
 
 def login_sub2api_admin(settings: dict[str, Any], *, proxy_url: str = "") -> dict[str, Any]:
-    email = _sub2api_admin_email(settings)
-    password = _sub2api_admin_password(settings)
-    if not email or not password:
-        raise RuntimeError("Sub2API 管理邮箱或密码未配置")
-    if '@' not in email or email.startswith('admin-'):
-        raise ValueError('请填写完整的管理员邮箱；管理 API Key 请填到 API Key 栏并选择该鉴权方式')
-    response = requests.post(
-        f"{_sub2api_api_url(settings)}/api/v1/auth/login",
-        headers={
-            "Content-Type": "application/json",
-            **_sub2api_public_headers(),
-        },
-        json={"email": email, "password": password},
-        timeout=30,
-        verify=True,
-        proxies=build_requests_proxies(proxy_url),
-    )
-    if response.status_code != 200:
-        raise RuntimeError(_response_error(response))
-    data = _sub2api_response_data(response)
-    if not isinstance(data, dict):
-        raise RuntimeError("Sub2API 登录结果异常")
-    _set_sub2api_session(settings, data)
-    return data
+    raise RuntimeError("当前版本只支持管理员 API Key；请在 Sub2API 设置中填写 API Key")
 
 
 def refresh_sub2api_admin_session(settings: dict[str, Any], *, proxy_url: str = "") -> dict[str, Any]:
-    refresh_token = _sub2api_refresh_token(settings)
-    if not refresh_token:
-        raise RuntimeError("Sub2API Refresh Token 未配置")
-    response = requests.post(
-        f"{_sub2api_api_url(settings)}/api/v1/auth/refresh",
-        headers={
-            "Content-Type": "application/json",
-            **_sub2api_public_headers(),
-        },
-        json={"refresh_token": refresh_token},
-        timeout=30,
-        verify=True,
-        proxies=build_requests_proxies(proxy_url),
-    )
-    if response.status_code != 200:
-        raise RuntimeError(_response_error(response))
-    data = _sub2api_response_data(response)
-    if not isinstance(data, dict):
-        raise RuntimeError("Sub2API 刷新登录态结果异常")
-    _set_sub2api_session(settings, data)
-    return data
+    raise RuntimeError("当前版本不使用管理员邮箱密码或登录态，只需要管理员 API Key")
 
 
 def _ensure_sub2api_auth(settings: dict[str, Any], *, proxy_url: str = "") -> str:
-    mode = _sub2api_settings(settings).get('auth_mode', 'auto')
-    if mode == 'api_key' or (mode == 'auto' and _sub2api_api_key(settings)):
-        if not _sub2api_api_key(settings):
-            raise ValueError('请填写 Sub2API 管理 API Key')
-        return ''
-    with _sub2api_auth_lock:
-        access_token = _sub2api_access_token(settings)
-        if access_token and not _sub2api_is_session_expired(settings):
-            return access_token
-        if access_token and _sub2api_refresh_token(settings):
-            try:
-                refresh_sub2api_admin_session(settings, proxy_url=proxy_url)
-                return _sub2api_access_token(settings)
-            except Exception:
-                pass
-        if _sub2api_admin_email(settings) and _sub2api_admin_password(settings):
-            login_sub2api_admin(settings, proxy_url=proxy_url)
-            return _sub2api_access_token(settings)
-        if mode == "password":
-            raise ValueError("请填写 Sub2API 管理邮箱和密码")
-        raise ValueError("请配置 Sub2API 管理 API Key 或邮箱密码")
+    if not _sub2api_api_key(settings):
+        raise ValueError("请填写 Sub2API 管理 API Key")
+    return ""
 
 
 def _sub2api_request(
@@ -253,37 +149,7 @@ def _sub2api_request(
     )
     if response.status_code != 401 or not require_auth:
         return response
-    mode = _sub2api_settings(settings).get('auth_mode', 'auto')
-    if mode == 'api_key' or (mode == 'auto' and _sub2api_api_key(settings)):
-        return response  # Never fall back to an unrelated saved login.
-
-    refreshed = False
-    if _sub2api_refresh_token(settings):
-        try:
-            refresh_sub2api_admin_session(settings, proxy_url=proxy_url)
-            refreshed = True
-        except Exception:
-            refreshed = False
-    if not refreshed and _sub2api_admin_email(settings) and _sub2api_admin_password(settings):
-        login_sub2api_admin(settings, proxy_url=proxy_url)
-        refreshed = True
-    if not refreshed:
-        return response
-
-    retry_headers = {
-        **_sub2api_base_headers(settings, token=_sub2api_access_token(settings)),
-        **extra_headers,
-        **retry_headers,
-    }
-    return requests.request(
-        method.upper(),
-        f"{api_url}{path}",
-        headers=retry_headers,
-        timeout=request_timeout,
-        verify=True,
-        proxies=build_requests_proxies(proxy_url),
-        **kwargs,
-    )
+    return response
 
 
 def fetch_sub2api_groups(settings: dict[str, Any], *, proxy_url: str = "") -> list[dict[str, Any]]:
@@ -729,7 +595,7 @@ def fetch_sub2api_proxies(settings, *, proxy_url=''):
 
 
 def fetch_sub2api_proxy_endpoints(settings, *, proxy_url='', proxy_ids=None):
-    """Read proxy endpoints in memory for local OAuth authorization routing."""
+    """Read selected proxy endpoints for explicit diagnostics/admin tooling."""
     response = _sub2api_request(settings, 'GET', '/api/v1/admin/proxies/all', proxy_url=proxy_url)
     if response.status_code != 200:
         raise RuntimeError(redact_error(_response_error(response)))

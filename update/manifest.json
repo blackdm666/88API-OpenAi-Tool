@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "channel": "stable",
+  "version": "2.3.4",
+  "download_url": "https://test.88api.ai/downloads/openai-token-manager/88API-号池自动维护工具-v2.3.4.exe",
+  "release_url": "",
+  "sha256": "a834a32a68d3cc1b03170ae7f94d6af1f012affa70e29b229faf584f9542213a",
+  "size": 21660334,
+  "notes": [
+    "左侧凭证区新增移除账号（保留远端）",
+    "上传状态和Sub2API监控状态简化显示",
+    "速刷号购买入口固定打开指定页面"
+  ],
+  "mandatory": false
+}

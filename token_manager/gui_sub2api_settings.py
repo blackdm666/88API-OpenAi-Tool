@@ -9,8 +9,9 @@ from .integrations import (
     fetch_sub2api_proxies,
     fetch_sub2api_accounts,
 )
+from .auth_proxy import authorization_proxy_pool
 from .sub2api_policy import normalize_server_url, upload_options, match_remote, proxy_candidates, default_list_group_ids
-from .gui_widgets import CheckList, center_window
+from .gui_widgets import CheckList, ScrollableFrame, center_window
 
 
 FINGERPRINTS = {
@@ -33,23 +34,31 @@ class GUISub2APISettingsMixin:
         cfg = deepcopy(settings["integrations"]["sub2api"])
         dialog = tk.Toplevel(self.root)
         dialog.title("Sub2API · 连接、上传与自动维护设置")
-        dialog.geometry("740x600")
-        dialog.minsize(660, 570)
+        dialog.geometry("820x700")
+        dialog.minsize(720, 600)
         dialog.transient(self.root)
         center_window(dialog, self.root)
         dialog.grab_set()
         frame = ttk.Frame(dialog, padding=20, style="Card.TFrame")
         frame.pack(fill="both", expand=True)
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(0, weight=1)
         book = ttk.Notebook(frame)
-        book.pack(fill="both", expand=True)
+        book.grid(row=0, column=0, sticky="nsew")
         connection = ttk.Frame(book, padding=14, style="Card.TFrame")
-        parameters = ttk.Frame(book, padding=14, style="Card.TFrame")
+        parameters_scroll = ScrollableFrame(book)
+        parameters = ttk.Frame(parameters_scroll.body, padding=12, style="Card.TFrame")
+        parameters.pack(fill="both", expand=True)
         book.add(connection, text="服务器连接")
-        book.add(parameters, text="上传参数")
-        recovery = ttk.Frame(book, padding=14, style='Card.TFrame')
-        book.add(recovery, text='自动维护')
-        display = ttk.Frame(book, padding=14, style='Card.TFrame')
-        book.add(display, text='列表显示')
+        book.add(parameters_scroll, text="上传参数")
+        recovery_scroll = ScrollableFrame(book)
+        recovery = ttk.Frame(recovery_scroll.body, padding=12, style="Card.TFrame")
+        recovery.pack(fill="both", expand=True)
+        book.add(recovery_scroll, text="自动维护")
+        display_scroll = ScrollableFrame(book)
+        display = ttk.Frame(display_scroll.body, padding=12, style="Card.TFrame")
+        display.pack(fill="both", expand=True)
+        book.add(display_scroll, text="列表显示")
         default_groups = tk.StringVar(value=str(cfg.get('default_list_group_ids', '2')))
         ttk.Label(display, text='默认列表分组 ID', style='Card.TLabel').pack(anchor='w', pady=(8,4))
         ttk.Entry(display, textvariable=default_groups).pack(fill='x')
@@ -68,7 +77,7 @@ class GUISub2APISettingsMixin:
         ttk.Label(recovery, text='仅处理左侧已监控账号；需要先在 2FA 页加密保存资料，再启动自动维护。\n\n恢复流程：核对账号 → 刷新或重新授权 → 校验邮箱及工作区 → 写回原账号 → 检查启用和调度 → 模型测试 → 持续轮询。\n\n模型测试会消耗少量额度，每份新凭据只自动测试一次；不按轮询周期反复测试。主动停用的账号不会自动启用；验证码、登录拦截和身份不一致时等待人工处理。', wraplength=570, style='CardSubtle.TLabel').pack(anchor='w', pady=18)
         connection.columnconfigure(1, weight=1)
         parameters.columnconfigure(1, weight=1)
-        book.select(parameters)
+        book.select(parameters_scroll)
         values = {}
         proxy_menu_holder = {}
         proxy_menu_vars = {}
@@ -145,18 +154,13 @@ class GUISub2APISettingsMixin:
             return widget
 
         field(0, "api_url", "服务器地址", "https://")
-        field(
-            1, "auth_mode", "鉴权方式", "auto", options=["auto", "api_key", "password"]
-        )
-        field(2, "api_key", "管理 API Key / Token", secret=True)
-        field(3, "admin_email", "管理员邮箱")
-        field(4, "admin_password", "管理员密码", secret=True)
+        field(1, "api_key", "管理员 API Key", secret=True)
         ttk.Label(
             connection,
-            text="auto 优先使用 Key；api_key 仅用 Key；password 仅用邮箱密码。",
+            text="当前只使用管理员 API Key，不需要管理员邮箱或密码。软件接口代理仅用于连接该管理接口。",
             wraplength=550,
             style="CardSubtle.TLabel",
-        ).grid(row=5, column=0, columnspan=2, sticky="w")
+        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(8, 0))
         field(6, "group_ids", "上传分组 ID（逗号分隔）", "2")
         field(7, "concurrency", "并发数", 10)
         field(8, "priority", "调度优先级", 1)
@@ -190,9 +194,9 @@ class GUISub2APISettingsMixin:
         catalog = tk.StringVar(value="代理可多选：每账号随机分配一个；重复上传保留池内原代理。留空或0为直连，401恢复不换代理。")
         ttk.Label(
             frame, textvariable=catalog, wraplength=630, style="CardSubtle.TLabel"
-        ).pack(fill="x", pady=8)
+        ).grid(row=1, column=0, sticky="ew", pady=(8, 0))
         actions = ttk.Frame(frame, style="Card.TFrame")
-        actions.pack(fill="x", pady=(10, 0))
+        actions.grid(row=2, column=0, sticky="ew", pady=(10, 0))
 
         def collect(validate=True):
             updated = deepcopy(settings)
@@ -211,12 +215,22 @@ class GUISub2APISettingsMixin:
             if validate:
                 upload_options(params)
             # A changed login or server must not retain another session.
-            if any(
-                params[k] != str(cfg.get(k, ""))
-                for k in ("api_url", "auth_mode", "admin_email", "admin_password")
-            ):
-                params.update(access_token="", refresh_token="", token_expires_at=0)
+            params.pop("auth_mode", None)
+            params.pop("admin_email", None)
+            params.pop("admin_password", None)
+            params.pop("access_token", None)
+            params.pop("refresh_token", None)
+            params.pop("token_expires_at", None)
             updated["integrations"]["sub2api"].update(params)
+            for legacy_key in (
+                "auth_mode",
+                "admin_email",
+                "admin_password",
+                "access_token",
+                "refresh_token",
+                "token_expires_at",
+            ):
+                updated["integrations"]["sub2api"].pop(legacy_key, None)
             return updated
 
         def load_choices():
@@ -256,6 +270,7 @@ class GUISub2APISettingsMixin:
                 return
             try:
                 updated = collect()
+                authorization_proxy_pool(updated)
             except (ValueError, KeyError) as exc:
                 messagebox.showerror("配置无效", str(exc), parent=dialog)
                 return
@@ -264,13 +279,8 @@ class GUISub2APISettingsMixin:
                 ("api_url", self.sub2api_url_var),
                 ("api_key", self.sub2api_key_var),
                 ("group_ids", self.sub2api_group_ids_var),
-                ("admin_email", self.sub2api_admin_email_var),
-                ("admin_password", self.sub2api_admin_password_var),
             ]:
                 var.set(updated["integrations"]["sub2api"].get(key, ""))
-            self.sub2api_auth_mode_var.set(
-                updated["integrations"]["sub2api"]["auth_mode"]
-            )
             if updated['integrations']['sub2api']['default_list_group_ids'] != cfg.get('default_list_group_ids', '2'):
                 self.reset_sub2api_default_groups()
                 self.populate_sub2api_tree()
@@ -285,6 +295,7 @@ class GUISub2APISettingsMixin:
         ttk.Button(
             actions, text="保存配置", command=save, style="Primary.TButton"
         ).pack(side="right", padx=8)
+        self._install_default_tooltips(dialog)
 
     def show_sub2api_option_picker(self, owner, data, values):
         picker = tk.Toplevel(owner)
@@ -333,6 +344,7 @@ class GUISub2APISettingsMixin:
         ttk.Button(box, text="应用选择", command=apply, style="Primary.TButton").pack(
             anchor="e", pady=8
         )
+        self._install_default_tooltips(picker)
 
     def set_recovery_selected(self, enabled):
         records = self.selected_records()

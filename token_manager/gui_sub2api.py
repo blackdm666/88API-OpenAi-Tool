@@ -60,7 +60,7 @@ class GUISub2APIMixin:
 
     def initial_remote_load(self):
         cfg=(self.current_settings().get('integrations') or {}).get('sub2api') or {}
-        if cfg.get('api_url') and (cfg.get('api_key') or cfg.get('access_token') or (cfg.get('admin_email') and cfg.get('admin_password'))) and not self.is_running() and not self.auto_refresh_running:
+        if cfg.get('api_url') and cfg.get('api_key') and not self.is_running() and not self.auto_refresh_running:
             self.refresh_sub2api_accounts()
 
     def update_recovery_snapshot(self, records):
@@ -589,6 +589,7 @@ class GUISub2APIMixin:
         buttons.grid(row=8, column=0, columnspan=2, sticky='ew', pady=(8, 0))
         ttk.Button(buttons, text='取消', command=dialog.destroy).pack(side='right')
         ttk.Button(buttons, text='保存', command=save, style='Primary.TButton').pack(side='right', padx=8)
+        self._install_default_tooltips(dialog)
 
     def edit_multiple_sub2api_remote(self, records: list[dict[str, Any]]) -> None:
         """Open a partial update form for several remote accounts.
@@ -731,6 +732,7 @@ class GUISub2APIMixin:
         ttk.Button(buttons, text="统一保存", command=save, style="Primary.TButton").pack(
             side="right", padx=8
         )
+        self._install_default_tooltips(dialog)
 
     def refresh_filtered_sub2api_remote(self) -> None:
         records = list(self.filtered_sub2api_records)

@@ -156,6 +156,11 @@ def account_identity(record: dict[str, Any]) -> tuple[str, str]:
     account_id = str(
         record.get("account_id") or credentials.get("chatgpt_account_id") or ""
     ).strip()
+    # authsess_* identifies one transient login session, not the stable
+    # ChatGPT workspace. Treating it as a workspace ID causes false mismatch
+    # after a successful reauthorization creates a new session.
+    if account_id.lower().startswith("authsess_"):
+        account_id = ""
     return email, account_id
 
 

@@ -6,16 +6,29 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
-from .integrations import sub2api_upload_payload
+from .auth_proxy import authorization_proxy
+from .auth_batch import remove_account_lines
+from .credential_vault import CredentialVault
+from .integrations import fetch_sub2api_accounts, sub2api_upload_payload
 from .usage_display import quota_cell
 from .recovery_support import remote_health
 from .utils import openai_plan_label, sub2api_plan_type
-from .sub2api_policy import auth_failure_kind
+from .sub2api_policy import auth_failure_kind, match_remote
 from .converters import from_local_payload, from_sub2api_payload
 from .services import export_organized_payloads, refresh_record, run_batch, sync_subscription, upload_record
+from .utils import atomic_write_json, safe_email_filename
 
 
 class GUIRecordsMixin:
+    @staticmethod
+    def _is_pending_auth2fa(record: dict[str, object]) -> bool:
+        metadata = record.get('metadata') or {}
+        return (
+            isinstance(metadata, dict)
+            and bool(metadata.get('auth2fa_pending'))
+            and not any(record.get(key) for key in ('access_token', 'refresh_token', 'id_token'))
+        )
+
     def show_token_context_menu(self, event):
         row = self.token_tree.identify_row(event.y)
         if row and row not in self.token_tree.selection():
@@ -29,6 +42,10 @@ class GUIRecordsMixin:
         menu.add_command(label="监控选中", command=lambda: self.set_recovery_selected(True))
         menu.add_command(label="取消监控", command=lambda: self.set_recovery_selected(False))
         menu.add_separator()
+        menu.add_command(
+            label="移除账号（保留远端）",
+            command=self.remove_selected_keep_remote,
+        )
         menu.add_command(label="删除账号", command=self.delete_selected)
         try:
             menu.tk_popup(event.x_root, event.y_root)
@@ -78,7 +95,7 @@ class GUIRecordsMixin:
                     status,
                     record["_remaining_text"],
                     upload_summary,
-                    (record.get("sub2api_recovery") or {}).get("status", "未监控"),
+                    self.recovery_summary(record),
                 ),
                 tags=tags,
             )
@@ -89,18 +106,23 @@ class GUIRecordsMixin:
         self.on_selection_changed()
 
     def account_status(self, record, remote=None):
+        if self._is_pending_auth2fa(record):
+            return '失效'
+        if not record.get('access_token') or not record.get('refresh_token'):
+            return '失效'
         if remote:
             if auth_failure_kind(remote):
-                remote_access = (remote.get('credentials') or {}).get('access_token')
-                if not remote_access:
-                    return '授权失效'
-                same = remote_access == record.get('access_token')
-                return '授权失效' if same else '待补授权'
+                return '失效'
+            credentials_status = remote.get('credentials_status') or {}
+            if credentials_status.get('has_access_token') is False:
+                return '失效'
+            if remote.get('status') == 'inactive':
+                return '失效'
             health = remote_health(remote)
-            if health != '已启用·可调度':
-                return health.replace('已启用·', '')
-            return '可调度'
-        return '已过期' if record['_is_expired'] else '未过期'
+            if health in {'已停用', '授权异常', '远端异常', '已启用·已到期'}:
+                return '失效'
+            return '正常'
+        return '失效' if record['_is_expired'] else '正常'
 
     def filter_records(self, records: list[dict[str, object]]) -> list[dict[str, object]]:
         search = self.search_var.get().strip().lower()
@@ -118,13 +140,11 @@ class GUIRecordsMixin:
                 continue
             if plan_filter and plan_filter != "全部标签".lower() and plan_filter != plan_label:
                 continue
-            if status_filter in ("有效", "未过期") and record["_is_expired"]:
-                continue
-            if status_filter == "已过期" and not record["_is_expired"]:
+            if status_filter in ("正常", "失效") and self.account_status(
+                record, self.local_remote_record(record)
+            ) != status_filter:
                 continue
             if status_filter == "上传异常" and not has_upload_error:
-                continue
-            if status_filter in ('可调度', '授权失效', '待补授权', '已停用') and self.account_status(record, self.local_remote_record(record)) != status_filter:
                 continue
             filtered.append(record)
         return filtered
@@ -191,20 +211,21 @@ class GUIRecordsMixin:
     def upload_summary(self, record: dict[str, object]) -> str:
         remote = self.local_remote_record(record)
         if remote:
-            if not (remote.get('credentials') or {}).get('access_token'):
-                return f"已上传 #{remote['id']} · 凭据已隐藏"
-            synced = bool(record.get('access_token')) and (remote.get('credentials') or {}).get('access_token') == record.get('access_token')
-            return f"已上传 #{remote['id']} · " + ('已同步' if synced else '凭据不同')
+            remote_id = remote.get("id")
+            if remote_id not in (None, ""):
+                return f"已上传 #{remote_id}"
+            return "已上传"
         if self.sub2api_snapshot_server:
-            return '未匹配远端'
+            return "未上传"
         uploads = record.get("uploads") or {}
-        parts: list[str] = []
-        for key in ("sub2api",):
-            state = uploads.get(key) or {}
-            if not state:
-                continue
-            parts.append(f"{key}:{'OK' if state.get('ok') else 'ERR'}")
-        return ('历史 ' + " ".join(parts)) if parts else '未核验'
+        state = uploads.get("sub2api") or {}
+        if state.get("ok"):
+            return "已上传"
+        return "未上传"
+
+    def recovery_summary(self, record: dict[str, object]) -> str:
+        """Keep the list column about enrollment, not the detailed recovery state."""
+        return "监控中" if bool((record.get("sub2api_recovery") or {}).get("enabled")) else "未监控"
 
     def plan_label(self, record: dict[str, object]) -> str:
         subscription = record.get('subscription') or {}
@@ -259,7 +280,8 @@ class GUIRecordsMixin:
 标签: {self.plan_label(record)}
 标签来源: {subscription.get('source', '')}
 订阅到期: {subscription.get('subscription_active_until', '') or '未知'}
-本地期限: {'已过期' if record['_is_expired'] else '未过期（不代表授权未撤销）'}
+状态: {self.account_status(record, sub2api_remote or None)}
+本地期限: {'已过期' if record['_is_expired'] else '未过期'}
 剩余时间: {record['_remaining_text']}
 最后刷新: {record.get('last_refresh', '')}
 创建时间: {record.get('created_at', '')}
@@ -288,16 +310,28 @@ Sub2API 远端:
         if not records:
             messagebox.showerror("错误", "请先选择账号")
             return
+        pending = [record for record in records if self._is_pending_auth2fa(record)]
+        if pending:
+            messagebox.showinfo(
+                "尚未授权",
+                f"选中的 {len(pending)} 个账号只有2FA资料，不能刷新OAuth令牌；请点击“智能补授权”。",
+            )
+            return
 
         settings = self.current_settings()
-        proxy = settings.get("http_proxy", "")
         workers = min(len(records), int(settings.get("refresh_workers") or 1))
 
         def worker():
             return run_batch(
                 records,
                 workers=workers,
-                job=lambda record: refresh_record(self.store, record, settings, proxy_url=proxy, log_fn=self.log),
+                job=lambda record: refresh_record(
+                    self.store,
+                    record,
+                    settings,
+                    proxy_url=authorization_proxy(settings),
+                    log_fn=self.log,
+                ),
                 progress_cb=self.with_progress("刷新"),
             )
 
@@ -350,6 +384,13 @@ Sub2API 远端:
         if not records:
             messagebox.showerror("错误", "请先选择账号")
             return
+        pending = [record for record in records if self._is_pending_auth2fa(record)]
+        if pending:
+            messagebox.showinfo(
+                "尚未授权",
+                f"选中的 {len(pending)} 个账号只有2FA资料，不能上传空凭据；请先完成“智能补授权”。",
+            )
+            return
         self.save_settings(reload_tokens=False, notify=False)
         target = self.upload_target_var.get().strip().lower()
         settings = dict(self.config)
@@ -366,10 +407,18 @@ Sub2API 远端:
 
         def done(result):
             self.set_running(False, "上传完成")
-            self.reload_tokens()
+            # Upload state is persisted locally, but the left-side status can
+            # also be derived from the cached Sub2API snapshot.  Re-read the
+            # local files first, then refresh the remote snapshot after any
+            # successful Sub2API upload so old 401/error state is not shown.
+            self.reload_tokens(save_first=False)
             if result.get("error"):
                 messagebox.showerror("错误", result["error"])
                 return
+            success_count = int(result.get("success_count") or 0)
+            if target == "sub2api" and success_count > 0:
+                self.log("Sub2API 上传成功，正在刷新远端账号状态")
+                self.refresh_sub2api_accounts()
             messagebox.showinfo("完成", f"上传 {target} 完成\n成功: {result['success_count']}\n失败: {result['fail_count']}")
 
         self.run_background(f"正在上传到 {target}", worker, done)
@@ -389,12 +438,265 @@ Sub2API 远端:
         if not records:
             messagebox.showerror("错误", "请先选择账号")
             return
-        if not messagebox.askyesno("确认", f"确定删除选中的 {len(records)} 个账号吗？"):
+        if not messagebox.askyesno(
+            "确认删除",
+            f"确定删除选中的 {len(records)} 个账号吗？\n\n"
+            "将同步清理：本地凭据、已保存的2FA资料，以及能唯一匹配到的 Sub2API 远端账号。",
+        ):
             return
-        for record in records:
-            self.store.delete(record.get("_filename", ""))
-        self.log(f"已删除 {len(records)} 个账号")
-        self.reload_tokens()
+        settings = self.current_settings()
+        records = [dict(record) for record in records]
+        sub2api_cfg = (settings.get("integrations") or {}).get("sub2api") or {}
+        has_remote_config = bool(
+            str(sub2api_cfg.get("api_url") or "").strip()
+            and str(sub2api_cfg.get("api_key") or "").strip()
+        )
+
+        def worker():
+            lookup_ok = True
+            lookup_error = ""
+            remotes = []
+            if has_remote_config:
+                try:
+                    remotes = fetch_sub2api_accounts(
+                        settings,
+                        proxy_url=settings.get("http_proxy", ""),
+                        filters={"platform": "openai"},
+                    )
+                except Exception as exc:
+                    lookup_ok = False
+                    lookup_error = str(exc)
+            else:
+                # Without a current API Key, do not use a stale cached list to
+                # issue destructive remote DELETE requests.
+                remotes = []
+
+            resolved: list[tuple[dict[str, object], dict[str, object]]] = []
+            unresolved: list[tuple[dict[str, object], str]] = []
+            if lookup_ok:
+                for record in records:
+                    try:
+                        remote = match_remote(
+                            {**record, "sub2api_recovery": {}},
+                            remotes,
+                            allow_rebind=True,
+                        )
+                    except ValueError as exc:
+                        remote = None
+                        unresolved.append((record, str(exc)))
+                    if remote:
+                        resolved.append((record, remote))
+                    elif not any(item[0] is record for item in unresolved):
+                        unresolved.append((record, "未找到唯一匹配的 Sub2API 远端账号"))
+
+            remote_result = {
+                "success_count": 0,
+                "fail_count": 0,
+                "results": [],
+            }
+            if lookup_ok and resolved:
+                from .services import delete_sub2api_remote_records
+
+                remote_result = delete_sub2api_remote_records(
+                    [remote for _, remote in resolved],
+                    settings,
+                    proxy_url=settings.get("http_proxy", ""),
+                    log_fn=self.log,
+                )
+
+            successful_remote_ids = {
+                int(item[0].get("id") or 0)
+                for item in remote_result.get("results", [])
+                if item[1] and int(item[0].get("id") or 0) > 0
+            }
+            failed_remote_ids = {
+                int(item[0].get("id") or 0)
+                for item in remote_result.get("results", [])
+                if not item[1] and int(item[0].get("id") or 0) > 0
+            }
+            deletable: list[dict[str, object]] = []
+            blocked: list[tuple[dict[str, object], str]] = []
+            for record in records:
+                remote = next(
+                    (remote for local, remote in resolved if local is record),
+                    None,
+                )
+                if remote is not None:
+                    remote_id = int(remote.get("id") or 0)
+                    if remote_id in failed_remote_ids:
+                        blocked.append((record, "Sub2API 删除失败，已保留本地账号和2FA资料"))
+                    elif remote_id in successful_remote_ids:
+                        deletable.append(record)
+                    else:
+                        blocked.append((record, "Sub2API 删除结果未知，已保留本地账号和2FA资料"))
+                elif lookup_ok:
+                    deletable.append(record)
+                else:
+                    blocked.append((record, f"无法读取 Sub2API 列表，未执行本地删除：{lookup_error}"))
+
+            vault_removed = set()
+            vault_error = ""
+            if deletable:
+                try:
+                    vault_removed = CredentialVault().delete_accounts(
+                        [str(record.get("email") or "") for record in deletable]
+                    )
+                except Exception as exc:
+                    vault_error = str(exc)
+                    blocked.extend(
+                        (record, f"2FA资料清理失败，已保留本地账号：{vault_error}")
+                        for record in deletable
+                    )
+                    deletable = []
+
+            local_deleted = 0
+            for record in deletable:
+                try:
+                    self.store.delete(record.get("_filename", ""))
+                    local_deleted += 1
+                except Exception as exc:
+                    blocked.append((record, f"本地凭据删除失败：{exc}"))
+
+            return {
+                "lookup_ok": lookup_ok,
+                "lookup_error": lookup_error,
+                "remote_result": remote_result,
+                "local_deleted": local_deleted,
+                "vault_removed": len(vault_removed),
+                "blocked": blocked,
+                "unresolved": unresolved,
+            }
+
+        def done(result):
+            self.set_running(False, "账号删除完成")
+            if result.get("error"):
+                messagebox.showerror("删除失败", result["error"])
+                return
+            local_deleted = int(result.get("local_deleted") or 0)
+            vault_removed = int(result.get("vault_removed") or 0)
+            remote_result = result.get("remote_result") or {}
+            remote_success = int(remote_result.get("success_count") or 0)
+            remote_failed = int(remote_result.get("fail_count") or 0)
+            for record, reason in result.get("blocked") or []:
+                self.log(f"删除保留 {record.get('email', 'Unknown')}：{reason}", "error")
+            for record, reason in result.get("unresolved") or []:
+                self.log(f"删除说明 {record.get('email', 'Unknown')}：{reason}", "warning")
+            self.log(
+                f"删除完成：本地 {local_deleted} 个，2FA资料 {vault_removed} 个，"
+                f"Sub2API远端成功 {remote_success} 个，失败 {remote_failed} 个"
+            )
+            self.reload_tokens(save_first=False)
+            if remote_success and has_remote_config:
+                self.refresh_sub2api_accounts()
+            messagebox.showinfo(
+                "删除完成",
+                f"本地删除：{local_deleted}\n"
+                f"2FA资料清理：{vault_removed}\n"
+                f"Sub2API远端删除成功：{remote_success}\n"
+                f"Sub2API远端删除失败：{remote_failed}\n"
+                f"保留待处理：{len(result.get('blocked') or [])}",
+            )
+
+        self.run_background("正在同步删除账号", worker, done)
+
+    def remove_selected_keep_remote(self) -> None:
+        """Remove only local credentials and saved 2FA material.
+
+        This action intentionally does not read or mutate the Sub2API API.
+        The remote account remains available for later re-import or manual
+        management.
+        """
+        if self.auto_refresh_running or self.is_running():
+            messagebox.showinfo(
+                "请先停止维护",
+                "请先停止自动维护并等待当前任务结束",
+            )
+            return
+        records = self.selected_records()
+        if not records:
+            messagebox.showerror("错误", "请先选择账号")
+            return
+        if not messagebox.askyesno(
+            "确认移除本地账号",
+            f"确定移除选中的 {len(records)} 个账号吗？\n\n"
+            "只清理本地凭据和已保存的2FA资料，保留 Sub2API 远端账号不变。",
+        ):
+            return
+
+        records = [dict(record) for record in records]
+        emails = [
+            str(record.get("email") or "").strip()
+            for record in records
+            if str(record.get("email") or "").strip()
+        ]
+
+        def worker():
+            try:
+                vault_removed = CredentialVault().delete_accounts(emails)
+            except Exception as exc:
+                return {
+                    "error": f"2FA资料清理失败：{exc}",
+                    "local_deleted": 0,
+                    "vault_removed": 0,
+                    "blocked": [],
+                }
+
+            local_deleted = 0
+            blocked: list[tuple[dict[str, object], str]] = []
+            for record in records:
+                try:
+                    self.store.delete(record.get("_filename", ""))
+                    local_deleted += 1
+                except Exception as exc:
+                    blocked.append((record, f"本地凭据删除失败：{exc}"))
+            return {
+                "error": "",
+                "local_deleted": local_deleted,
+                "vault_removed": len(vault_removed),
+                "blocked": blocked,
+            }
+
+        def done(result):
+            self.set_running(False, "本地账号移除完成")
+            if result.get("error"):
+                self.log(f"移除本地账号失败：{result['error']}", "error")
+                messagebox.showerror("移除失败", result["error"])
+                return
+
+            # The editor is also cleared on the UI thread so save-on-close
+            # cannot resurrect the 2FA material just removed from the vault.
+            if hasattr(self, "auth2fa_input"):
+                text = remove_account_lines(
+                    self.auth2fa_input.get("1.0", "end"),
+                    emails,
+                )
+                self.auth2fa_input.delete("1.0", "end")
+                self.auth2fa_input.insert("1.0", text)
+                if hasattr(self, "update_auth2fa_input_stats"):
+                    self.update_auth2fa_input_stats()
+                if hasattr(self, "update_vault_status"):
+                    self.update_vault_status()
+
+            for record, reason in result.get("blocked") or []:
+                self.log(
+                    f"移除本地账号保留 {record.get('email', 'Unknown')}：{reason}",
+                    "error",
+                )
+            local_deleted = int(result.get("local_deleted") or 0)
+            vault_removed = int(result.get("vault_removed") or 0)
+            self.log(
+                f"已移除本地账号（保留Sub2API远端）：本地凭据 {local_deleted} 个，"
+                f"2FA资料 {vault_removed} 个"
+            )
+            self.reload_tokens(save_first=False)
+            messagebox.showinfo(
+                "移除完成",
+                f"本地凭据移除：{local_deleted}\n"
+                f"2FA资料清理：{vault_removed}\n"
+                "Sub2API远端账号：已保留",
+            )
+
+        self.run_background("正在移除本地账号（保留远端）", worker, done)
 
     def copy_to_clipboard(self, value: str, success_message: str) -> None:
         if not value:
@@ -423,6 +725,9 @@ Sub2API 远端:
         if not record:
             messagebox.showerror("错误", "请先选择账号")
             return
+        if self._is_pending_auth2fa(record):
+            messagebox.showinfo("尚未授权", "该账号还没有OAuth Token，完成“智能补授权”后才能生成上传预览。")
+            return
         self.save_settings(reload_tokens=False, notify=False)
         payload = sub2api_upload_payload(record, self.current_settings())
         export_target = 'sub2api'
@@ -441,6 +746,39 @@ Sub2API 远端:
     def copy_preview(self) -> None:
         text = self.preview_text.get("1.0", tk.END).strip()
         self.copy_to_clipboard(text, "预览内容已复制")
+
+    def export_preview_file(self) -> None:
+        record = self.primary_record()
+        if not record:
+            messagebox.showerror("错误", "请先选择账号")
+            return
+        if self._is_pending_auth2fa(record):
+            messagebox.showinfo("尚未授权", "该账号还没有OAuth Token，完成“智能补授权”后才能导出。")
+            return
+        self.save_settings(reload_tokens=False, notify=False)
+        payload = dict(sub2api_upload_payload(record, self.current_settings()))
+        # File export is intended for a clean Sub2API import. Never include
+        # the local/remote proxy assignment in this user-selected file.
+        payload.pop("proxy_id", None)
+        payload.pop("proxy", None)
+        email = str(record.get("email") or "account").strip()
+        selected = filedialog.asksaveasfilename(
+            title="导出 Sub2API 账号文件（不含代理）",
+            initialfile=f"{safe_email_filename(email)}_sub2api.json",
+            defaultextension=".json",
+            filetypes=[("JSON 文件", "*.json"), ("所有文件", "*.*")],
+            parent=self.root,
+        )
+        if not selected:
+            return
+        try:
+            atomic_write_json(Path(selected), payload)
+        except Exception as exc:
+            messagebox.showerror("导出失败", str(exc))
+            self.log(f"导出 Sub2API 文件失败 {email}：{exc}", "error")
+            return
+        self.log(f"已导出 Sub2API 文件（不含代理）: {selected}")
+        self.status_var.set("Sub2API 文件已导出（不含代理）")
 
     def import_payloads(self, payloads: list[dict[str, object]], source: str) -> int:
         count = 0

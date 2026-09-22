@@ -5,13 +5,17 @@ from pathlib import Path
 
 
 APP_NAME = "88API号池自动维护工具"
-APP_VERSION = "2.2.0-88api.47"
+APP_VERSION = "2.3.4"
 
 DEFAULT_OAUTH_AUTH_URL = "https://auth.openai.com/oauth/authorize"
 DEFAULT_OAUTH_TOKEN_URL = "https://auth.openai.com/oauth/token"
 DEFAULT_OAUTH_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 DEFAULT_OAUTH_REDIRECT_URI = "http://localhost:1455/auth/callback"
 DEFAULT_OAUTH_SCOPE = "openid email profile offline_access"
+DEFAULT_UPDATE_MANIFEST_URL = (
+    "https://test.88api.ai/downloads/openai-token-manager/manifest.json"
+)
+DEFAULT_ACCOUNT_PURCHASE_URL = "https://catfk.com/shop/C96JR8SD"
 
 DEFAULT_CALLBACK_SUCCESS_HTML = """<!doctype html>
 <html>

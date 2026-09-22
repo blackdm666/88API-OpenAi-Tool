@@ -3,13 +3,16 @@ from __future__ import annotations
 import threading
 import time
 import traceback
+import webbrowser
 from typing import Any
 
 import tkinter as tk
-from tkinter import filedialog, ttk
+from tkinter import filedialog, messagebox, ttk
 
 from .config import save_app_config
 from .constants import (
+    APP_VERSION,
+    DEFAULT_ACCOUNT_PURCHASE_URL,
     DEFAULT_AUTH_TIMEOUT_SECONDS,
     DEFAULT_LOG_POLL_MS,
     DEFAULT_UI_REFRESH_MS,
@@ -18,9 +21,96 @@ from .constants import (
 )
 from .store import TokenStore
 from .sub2api_policy import redact_error
+from .gui_widgets import HoverTooltip
+from .auth_proxy import authorization_proxy_pool
+from .updater import (
+    UpdateInfo,
+    check_for_update as fetch_update_info,
+    download_update_package,
+    launch_update,
+)
 
 
 class GUICommonMixin:
+    def _install_default_tooltips(self, root) -> None:
+        """Attach plain-language help to every main button and input widget."""
+        references = getattr(self, "_tooltip_references", [])
+        descriptions = {
+            "重新读取账号": "重新扫描本地 Tokens 目录；不会主动刷新 OAuth 令牌。",
+            "刷新本地令牌": "刷新左侧选中账号的 OAuth 令牌并保存新凭据。",
+            "同步标签": "读取 OpenAI 订阅身份并更新左侧标签；失败时保留原标签。",
+            "上传选中": "把选中的本地 OAuth 凭据同步到 Sub2API，并应用当前上传参数。",
+            "远端配置": "打开 Sub2API 连接、上传参数、自动维护和列表显示设置。",
+            "监控选中": "将选中的本地账号绑定到唯一的 Sub2API 远端账号并纳入自动维护。",
+            "删除账号": "删除本地账号，同时清理已保存的2FA资料，并尝试删除唯一匹配的 Sub2API 账号。",
+            "启动自动维护": "周期检查令牌和远端授权；401时按规则刷新或使用2FA资料补授权。",
+            "速刷号购买": "打开固定的速刷号购买页面，不会上传本地账号、Token 或2FA凭据。",
+            "生成预览": "生成当前选中账号的 Sub2API JSON 预览，并写入输出目录。",
+            "复制预览": "把预览框中的完整 JSON 复制到剪贴板。",
+            "导出为文件": "选择保存位置导出 Sub2API JSON；导出文件会去掉代理信息。",
+            "导入剪贴板": "读取剪贴板中的 JSON 并导入本地凭据。",
+            "导入文件": "选择一个 JSON 文件并导入本地凭据。",
+            "刷新列表": "重新读取 Sub2API 远端账号、状态和已有额度快照。",
+            "更新用量": "调用 Sub2API 用量接口更新选中账号的额度快照。",
+            "Sub2API 设置": "配置服务器地址、管理员 API Key、上传参数和自动维护规则。",
+            "账号操作 ▾": "打开启停调度、刷新令牌和删除远端账号的操作菜单。",
+            "检查更新": "从固定的 test.88api.ai 更新地址检查新版本。",
+            "保存设置": "保存当前设置；代理和连接参数会在后续任务中生效。",
+            "整理导出文件": "整理输出目录中的 Sub2API 文件并生成聚合导出文件。",
+            "清理 Tokens": "清理重复或历史 Tokens 文件，只保留每个账号的最佳记录。",
+            "清空日志": "清空软件内显示的运行日志，不影响账号和输出文件。",
+            "导入文件": "从本地文件导入账号资料或2FA资料。",
+            "清空输入": "清空当前编辑框，不删除已加密保存的2FA资料。",
+            "智能补授权": "只处理需要授权且能唯一匹配的本地账号；成功后写回 Token。",
+            "加密保存资料": "用当前 Windows 用户 DPAPI 加密保存邮箱、密码和2FA密匙。",
+            "载入已存资料": "将加密资料载入当前编辑框；不会把资料写入日志。",
+            "管理已存资料": "搜索或删除加密保存的2FA资料。",
+            "添加到左侧凭据": "把2FA资料对应的邮箱加入左侧，先显示待授权占位记录。",
+            "查看本次结果": "查看最近一次批量授权的成功、失败、跳过原因和诊断路径。",
+            "维护规则": "查看自动维护的触发条件、重试和安全边界。",
+            "远端 / 双栏": "隐藏或显示左侧本地凭据栏，扩大远端列表空间。",
+        }
+
+        def label_before(widget) -> str:
+            try:
+                children = list(widget.master.winfo_children())
+                index = children.index(widget)
+            except (ValueError, tk.TclError):
+                return ""
+            for candidate in reversed(children[:index]):
+                if candidate.winfo_class() in {"TLabel", "Label"}:
+                    text = str(candidate.cget("text") or "").strip()
+                    if text:
+                        return text
+            return ""
+
+        def attach(widget, text):
+            if not text or getattr(widget, "_codex_tooltip_attached", False):
+                return
+            references.append(HoverTooltip(widget, text))
+            try:
+                widget._codex_tooltip_attached = True
+            except Exception:
+                pass
+
+        def walk(widget):
+            widget_class = widget.winfo_class()
+            if widget_class in {"TButton", "Button", "TCheckbutton", "Checkbutton", "TMenubutton"}:
+                text = str(widget.cget("text") or widget.cget("textvariable") or "").strip()
+                attach(widget, descriptions.get(text, f"点击执行“{text or '此操作'}”。"))
+            elif widget_class in {"TEntry", "Entry", "TCombobox", "TSpinbox", "Spinbox"}:
+                label = label_before(widget)
+                if not label:
+                    label = "此输入项"
+                attach(widget, f"{label}：在这里输入或选择对应值。")
+            elif widget_class in {"Text", "ScrolledText"}:
+                attach(widget, "文本输入区：按界面提示输入内容；敏感资料不会写入运行日志。")
+            for child in widget.winfo_children():
+                walk(child)
+
+        walk(root)
+        self._tooltip_references = references
+
     def _configure_styles(self) -> None:
         self.palette = {
             "bg": "#edf3fa",
@@ -321,6 +411,31 @@ class GUICommonMixin:
     def log(self, message: str, level: str = "info") -> None:
         self.log_bus.write(level, redact_error(message))
 
+    def open_account_purchase_page(self) -> None:
+        """Open the fixed account-purchase page without exposing it as a setting."""
+        try:
+            opened = webbrowser.open(DEFAULT_ACCOUNT_PURCHASE_URL, new=2)
+        except Exception as exc:
+            self.log(f"打开速刷号购买页面失败：{exc}", "error")
+            self.status_var.set("速刷号购买页面打开失败")
+            messagebox.showerror(
+                "打开购买页面失败",
+                f"无法打开默认浏览器。\n{exc}",
+                parent=self.root,
+            )
+            return
+        if not opened:
+            self.log("默认浏览器未能打开速刷号购买页面", "error")
+            self.status_var.set("速刷号购买页面打开失败")
+            messagebox.showerror(
+                "打开购买页面失败",
+                "默认浏览器没有接受打开请求，请手动访问购买入口。",
+                parent=self.root,
+            )
+            return
+        self.log(f"已打开速刷号购买页面：{DEFAULT_ACCOUNT_PURCHASE_URL}")
+        self.status_var.set("已打开速刷号购买页面")
+
     def poll_logs(self) -> None:
         for event in self.log_bus.drain():
             ts = time.strftime("%H:%M:%S", time.localtime(event.created_at))
@@ -344,9 +459,19 @@ class GUICommonMixin:
         config = deepcopy(self.config)
         integrations = dict(config.get("integrations") or {})
         sub2api_existing = dict(integrations.get("sub2api") or {})
+        for legacy_key in (
+            "auth_mode",
+            "admin_email",
+            "admin_password",
+            "access_token",
+            "refresh_token",
+            "token_expires_at",
+        ):
+            sub2api_existing.pop(legacy_key, None)
         config["tokens_dir"] = self.tokens_dir_var.get().strip()
         config["outputs_dir"] = self.outputs_dir_var.get().strip()
         config["http_proxy"] = self.proxy_var.get().strip()
+        config["auth_proxy"] = self.auth_proxy_var.get().strip()
         config["refresh_workers"] = max(1, min(MAX_REFRESH_WORKERS, _int(self.refresh_workers_var, 6)))
         config["upload_workers"] = max(1, min(MAX_UPLOAD_WORKERS, _int(self.upload_workers_var, 4)))
         config["auth_2fa_mode"] = "browser" if str(self.auth2fa_mode_var.get() or "").strip() == "浏览器链" else "protocol"
@@ -368,25 +493,22 @@ class GUICommonMixin:
         config["integrations"] = {
             "sub2api": {
                 **sub2api_existing,
-                "auth_mode": self.sub2api_auth_mode_var.get(),
                 "api_url": self.sub2api_url_var.get().strip(),
                 "api_key": self.sub2api_key_var.get().strip(),
                 "group_ids": self.sub2api_group_ids_var.get().strip(),
-                "admin_email": self.sub2api_admin_email_var.get().strip(),
-                "admin_password": self.sub2api_admin_password_var.get().strip(),
-                "access_token": str(sub2api_existing.get("access_token") or "").strip(),
-                "refresh_token": str(sub2api_existing.get("refresh_token") or "").strip(),
-                "token_expires_at": int(sub2api_existing.get("token_expires_at") or 0),
             },
         }
-        sub2api_current = config['integrations']['sub2api']
-        if any(str(sub2api_current.get(key, '')) != str(sub2api_existing.get(key, ''))
-               for key in ('api_url', 'admin_email', 'admin_password', 'auth_mode')):
-            sub2api_current.update(access_token='', refresh_token='', token_expires_at=0)
         return config
 
     def save_settings(self, reload_tokens: bool = True, notify: bool = True) -> None:
-        config = self.current_settings()
+        try:
+            config = self.current_settings()
+            authorization_proxy_pool(config)
+        except ValueError as exc:
+            if notify:
+                messagebox.showerror("代理设置无效", str(exc), parent=self.root)
+            self.log(f"代理设置无效：{exc}", "error")
+            return
         with self._state_lock:
             self.config = config
             self.store = TokenStore(config)
@@ -396,6 +518,136 @@ class GUICommonMixin:
             self.log("设置已保存")
         if reload_tokens:
             self.reload_tokens(save_first=False)
+
+    def check_for_updates(self, *, silent: bool = False, startup: bool = False) -> None:
+        """Check the fixed first-party update endpoint without making it editable."""
+        from .constants import DEFAULT_UPDATE_MANIFEST_URL
+
+        if self._update_check_inflight:
+            self.log("更新检查已在进行中，跳过重复请求", "warning")
+            return
+        self._update_check_inflight = True
+
+        def worker():
+            try:
+                return {
+                    "update": fetch_update_info(
+                        DEFAULT_UPDATE_MANIFEST_URL,
+                        current_version=APP_VERSION,
+                    )
+                }
+            except Exception as exc:
+                return {"error": str(exc)}
+
+        def done(result):
+            self._update_check_inflight = False
+            if result.get("error"):
+                self.log(f"检查更新失败：{result['error']}", "error")
+                if not silent:
+                    messagebox.showerror("检查更新失败", result["error"], parent=self.root)
+                return
+            info = result.get("update")
+            if info is None:
+                self.log(f"当前已是最新版本 v{APP_VERSION}")
+                if not silent:
+                    messagebox.showinfo(
+                        "检查更新",
+                        f"当前已是最新版本 v{APP_VERSION}",
+                        parent=self.root,
+                    )
+                return
+            self._prompt_download_update(info, startup=startup)
+
+        if not startup:
+            self.status_var.set("正在检查云端更新")
+        def run_check():
+            result = worker()
+            try:
+                self.root.after(0, lambda: done(result))
+            except (RuntimeError, tk.TclError):
+                pass
+
+        threading.Thread(target=run_check, daemon=True).start()
+
+    def _prompt_download_update(self, info: UpdateInfo, *, startup: bool = False) -> None:
+        if self.is_running() or self.auto_refresh_running:
+            if startup:
+                self._pending_startup_update = info
+                self.log("启动检查发现新版本，等待当前启动任务结束后提示更新", "info")
+                self.root.after(
+                    1000,
+                    lambda: self._prompt_download_update(info, startup=True),
+                )
+                return
+            self.log("发现新版本，但当前有任务运行；请任务结束后点击“检查更新”", "warning")
+            messagebox.showinfo(
+                "发现新版本",
+                "发现新版本，但当前正在执行任务。\n任务结束后请再次点击“检查更新”。",
+                parent=self.root,
+            )
+            return
+        if self._update_download_inflight:
+            self.log("更新包已在下载中，跳过重复操作", "warning")
+            return
+        notes = info.notes or "此版本没有附加更新说明"
+        text = (
+            f"发现新版本 v{info.version}\n"
+            f"当前版本 v{APP_VERSION}\n\n{notes}\n\n是否下载并更新？"
+        )
+        if not info.mandatory and not messagebox.askyesno("发现新版本", text, parent=self.root):
+            return
+        if info.mandatory:
+            messagebox.showinfo("必须更新", text, parent=self.root)
+
+        def worker():
+            try:
+                package = download_update_package(
+                    info,
+                    progress_cb=self._update_progress,
+                )
+                return {"package": str(package)}
+            except Exception as exc:
+                return {"error": str(exc)}
+
+        def done(result):
+            self._update_download_inflight = False
+            if result.get("error"):
+                self.log(f"下载更新失败：{result['error']}", "error")
+                messagebox.showerror("下载更新失败", result["error"], parent=self.root)
+                return
+            package = result["package"]
+            if not messagebox.askyesno(
+                "准备重启更新",
+                "更新包已通过 SHA-256 校验。\n"
+                "程序将先保存当前状态并退出，然后替换为新版本。\n"
+                "现在重启更新吗？",
+                parent=self.root,
+            ):
+                self.log(f"更新包已下载，稍后可重新检查更新：{package}")
+                return
+            try:
+                self.save_auth2fa_credentials(silent=True)
+                launch_update(package)
+                self.log("更新程序已启动，主程序即将安全退出")
+                self.root.destroy()
+            except Exception as exc:
+                self.log(f"启动更新失败：{exc}", "error")
+                messagebox.showerror("启动更新失败", str(exc), parent=self.root)
+
+        self._update_download_inflight = True
+        self.run_background("正在下载云端更新", worker, done)
+
+    def _update_progress(self, received: int, total: int | None) -> None:
+        if total:
+            percent = min(100, int(received * 100 / total))
+            self.root.after(0, lambda: self.status_var.set(f"正在下载更新 {percent}%"))
+        else:
+            self.root.after(
+                0,
+                lambda: self.status_var.set(
+                    f"正在下载更新 {received // 1024 // 1024} MB"
+                ),
+            )
 
     def persist_runtime_settings(self, settings: dict[str, Any]) -> None:
         with self._state_lock:

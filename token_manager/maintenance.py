@@ -5,8 +5,8 @@ from __future__ import annotations
 from copy import deepcopy
 import hashlib
 import time
-from random import SystemRandom
 
+from .auth_proxy import authorization_proxy, authorization_settings
 from .integrations import fetch_sub2api_accounts, apply_sub2api_credentials
 from .services import refresh_record
 from .sub2api_policy import (
@@ -36,8 +36,7 @@ def recovery_cycle(store, settings, *, log_fn=None, cancelled=lambda: False):
     from .credential_vault import CredentialVault, credential_revision
     from .recovery_support import (NeedsUser, authorize_saved_account, remote_health,
                                    test_sub2api_account, validate_new_credentials)
-    from .integrations import get_sub2api_account, get_sub2api_account_credentials, set_sub2api_schedulable, fetch_sub2api_proxy_endpoints
-    from .sub2api_policy import proxy_candidates
+    from .integrations import get_sub2api_account, get_sub2api_account_credentials, set_sub2api_schedulable
     from .utils import now_rfc3339
 
     cfg = (settings.get("integrations") or {}).get("sub2api") or {}
@@ -45,6 +44,7 @@ def recovery_cycle(store, settings, *, log_fn=None, cancelled=lambda: False):
     all_locals = store.load_all()
     result = {"checked": 0, "recovered": 0, "blocked": 0, "records": []}
     proxy = settings.get("http_proxy", "")
+    auth_proxy = authorization_proxy(settings)
     remotes = fetch_sub2api_accounts(settings, proxy_url=proxy, filters={"platform": "openai"})
     result['records'] = remotes
     locals_ = [r for r in all_locals if (r.get("sub2api_recovery") or {}).get("enabled")]
@@ -236,7 +236,7 @@ def recovery_cycle(store, settings, *, log_fn=None, cancelled=lambda: False):
                         source['refresh_token'] = credentials['refresh_token']
                         source['client_id'] = credentials.get('client_id') or source.get('client_id', '')
                     try:
-                        ok, message = refresh_record(store, source, settings, proxy_url=proxy, sync_plan=False)
+                        ok, message = refresh_record(store, source, settings, proxy_url=auth_proxy, sync_plan=False)
                         if not ok:
                             raise RuntimeError(message)
                     except Exception as exc:
@@ -260,18 +260,7 @@ def recovery_cycle(store, settings, *, log_fn=None, cancelled=lambda: False):
                         continue
                     state.update(reauth_attempts=state.get('reauth_attempts', 0) + 1, reauth_next_at=now + 300)
                     stage('自动重新授权中')
-                    auth_settings = settings
-                    proxy_ids = proxy_candidates(cfg)
-                    if proxy_ids:
-                        endpoints = fetch_sub2api_proxy_endpoints(
-                            settings, proxy_url=proxy, proxy_ids=proxy_ids
-                        )
-                        if not endpoints:
-                            raise NeedsUser('配置的 Sub2API 代理池没有可用代理，无法自动重新授权')
-                        auth_settings = deepcopy(settings)
-                        auth_settings['http_proxy'] = SystemRandom().choice(
-                            [item['url'] for item in endpoints]
-                        )
+                    auth_settings = authorization_settings(settings)
                     local = authorize_saved_account(local, remote, saved, auth_settings, log_fn=log_fn)
                     # Persist the newly authorized token with the upload phase in
                     # the same atomic write; never repeat login after upload failure.

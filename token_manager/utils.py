@@ -224,9 +224,9 @@ def derive_account_id(access_token: str, id_token: str, existing_account_id: str
     access_auth = get_auth_claims(decode_jwt(access_token))
     id_auth = get_auth_claims(decode_jwt(id_token))
     return str(
-        existing_account_id
-        or access_auth.get("chatgpt_account_id")
+        access_auth.get("chatgpt_account_id")
         or id_auth.get("chatgpt_account_id")
+        or existing_account_id
         or ""
     ).strip()
 
@@ -281,6 +281,13 @@ def build_requests_proxies(proxy_url: str) -> dict[str, str] | None:
     value = str(proxy_url or "").strip()
     if not value:
         return None
+    if "://" not in value:
+        value = f"http://{value}"
+    scheme = value.split("://", 1)[0].lower()
+    if scheme not in {"http", "https", "socks5", "socks5h"}:
+        raise ValueError(
+            f"代理仅支持 http、https、socks5、socks5h，当前为 {scheme or '未知协议'}"
+        )
     return {"http": value, "https": value}
 
 

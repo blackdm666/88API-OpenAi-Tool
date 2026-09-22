@@ -2,13 +2,17 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
 import os
+import shutil
 import struct
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from PIL import Image, ImageChops, ImageFilter
+from token_manager.constants import APP_VERSION
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -20,6 +24,7 @@ SPEC_FILE = BUILD_ASSETS_DIR / "build.spec"
 DIST_DIR = PROJECT_ROOT / "dist"
 BUILD_DIR = PROJECT_ROOT / "build"
 DIST_RUNTIME_NAMES = {"tokens", "outputs", "token_manager_config.json"}
+DESKTOP_RELEASE_PREFIX = "88API-号池自动维护工具"
 
 
 def project_python() -> str:
@@ -31,6 +36,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--prepare-only", action="store_true", help="只生成图标和 build.spec，不执行打包")
     parser.add_argument("--clean", action="store_true", help="打包前清理 build/dist")
     parser.add_argument("--console", action="store_true", help="生成带控制台的程序")
+    parser.add_argument(
+        "--no-desktop-install",
+        action="store_true",
+        help="只保留dist产物，不自动替换桌面的版本文件",
+    )
     parser.add_argument("--name", default="88API-号池自动维护工具", help="输出程序名")
     parser.add_argument("--entry-point", default="main.py", help="打包入口脚本")
     parser.add_argument("--icon-png", default=str(ICON_PNG), help="图标 PNG 路径")
@@ -344,6 +354,131 @@ def build_app(spec_path: Path) -> None:
     log("打包完成")
 
 
+def default_desktop_dir() -> Path:
+    """Resolve the current Windows user's real Desktop directory."""
+    try:
+        import winreg
+
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders",
+        ) as key:
+            configured, _ = winreg.QueryValueEx(key, "Desktop")
+        path = Path(os.path.expandvars(str(configured))).expanduser()
+        if path.is_dir():
+            return path.resolve()
+    except (ImportError, OSError, ValueError):
+        pass
+    return (Path.home() / "Desktop").resolve()
+
+
+def close_running_release(executable: Path, *, timeout: float = 15.0) -> bool:
+    """Ask the exact old desktop executable to close through its window."""
+    if os.name != "nt":
+        return False
+    try:
+        import psutil
+    except ImportError:
+        return False
+
+    target = os.path.normcase(str(executable.resolve()))
+    processes = []
+    for process in psutil.process_iter(["pid", "exe"]):
+        try:
+            process_path = process.info.get("exe")
+            if process_path and os.path.normcase(str(Path(process_path).resolve())) == target:
+                processes.append(process)
+        except (OSError, psutil.Error):
+            continue
+    if not processes:
+        return False
+
+    pids = {process.pid for process in processes}
+    user32 = ctypes.windll.user32
+    callback_type = ctypes.WINFUNCTYPE(
+        ctypes.c_bool,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+    )
+
+    @callback_type
+    def request_close(hwnd, _lparam):
+        pid = ctypes.c_ulong()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        if pid.value in pids:
+            user32.PostMessageW(hwnd, 0x0010, 0, 0)  # WM_CLOSE
+        return True
+
+    user32.EnumWindows(request_close, 0)
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not any(process.is_running() for process in processes):
+            return True
+        time.sleep(0.2)
+    return not any(process.is_running() for process in processes)
+
+
+def install_desktop_release(app_name: str, *, desktop_dir: Path | None = None) -> Path:
+    """Atomically install the new build, then remove only older versioned copies."""
+    source = (DIST_DIR / f"{app_name}.exe").resolve()
+    if not source.is_file():
+        raise FileNotFoundError(f"未找到打包产物: {source}")
+    desktop = (desktop_dir or default_desktop_dir()).expanduser().resolve()
+    if not desktop.is_dir():
+        raise FileNotFoundError(f"桌面目录不存在: {desktop}")
+
+    target_name = f"{DESKTOP_RELEASE_PREFIX}-v{APP_VERSION}.exe"
+    target = desktop / target_name
+    temporary = desktop / f".{target_name}.installing"
+    try:
+        shutil.copy2(source, temporary)
+        if temporary.stat().st_size != source.stat().st_size:
+            raise RuntimeError("桌面安装文件大小校验失败")
+        os.replace(temporary, target)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+    removed = []
+    failures = []
+    pattern = f"{DESKTOP_RELEASE_PREFIX}-v*.exe"
+    for candidate in desktop.glob(pattern):
+        resolved = candidate.resolve()
+        if resolved == target.resolve():
+            continue
+        # The search is non-recursive, but retain an explicit path boundary
+        # check before deleting versioned executables.
+        if resolved.parent != desktop or not candidate.name.startswith(
+            f"{DESKTOP_RELEASE_PREFIX}-v"
+        ):
+            continue
+        try:
+            candidate.unlink()
+            removed.append(candidate.name)
+        except OSError as exc:
+            # A one-file PyInstaller executable is locked while running.
+            # Request a normal WM_CLOSE so the app can save credentials and
+            # refuse closure if an authorization/recovery task is still active.
+            closed = close_running_release(candidate)
+            if closed:
+                try:
+                    candidate.unlink()
+                    removed.append(candidate.name)
+                    continue
+                except OSError as retry_exc:
+                    exc = retry_exc
+            failures.append(f"{candidate.name}: {exc}")
+    if failures:
+        raise RuntimeError(
+            "新版已安装，但旧版本未能全部删除；请关闭旧程序后重试: "
+            + "；".join(failures)
+        )
+    log(f"桌面版本已更新: {target}")
+    if removed:
+        log("已删除旧桌面版本: " + "、".join(sorted(removed)))
+    return target
+
+
 def main() -> None:
     args = parse_args()
     os.chdir(PROJECT_ROOT)
@@ -361,6 +496,8 @@ def main() -> None:
         return
     build_app(spec_path)
     log(f"输出目录: {DIST_DIR}")
+    if not args.no_desktop_install:
+        install_desktop_release(args.name)
 
 
 if __name__ == "__main__":

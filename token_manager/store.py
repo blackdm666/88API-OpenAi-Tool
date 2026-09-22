@@ -73,7 +73,9 @@ class TokenStore:
         raw = safe_read_json(path)
         if raw is None:
             return None
-        if not any(raw.get(key) for key in ("id_token", "access_token", "refresh_token")):
+        metadata = raw.get("metadata") if isinstance(raw.get("metadata"), dict) else {}
+        pending_auth2fa = bool(metadata.get("auth2fa_pending")) and bool(raw.get("email"))
+        if not pending_auth2fa and not any(raw.get(key) for key in ("id_token", "access_token", "refresh_token")):
             return None
         return self.normalize(raw, filename=path)
 
@@ -186,6 +188,17 @@ class TokenStore:
             # returns to an already imported account.
             old.update({key: value for key, value in record.items() if value not in ('', None)})
             record = old
+        # Convert a 2FA-only placeholder into a real OAuth credential.
+        if record.get("access_token") or record.get("refresh_token") or record.get("id_token"):
+            old_metadata = record.get("metadata")
+            if isinstance(old_metadata, dict) and old_metadata.get("auth2fa_pending"):
+                old_metadata = dict(old_metadata)
+                old_metadata.pop("auth2fa_pending", None)
+                old_metadata.pop("auth2fa_added_at", None)
+                if old_metadata:
+                    record["metadata"] = old_metadata
+                else:
+                    record.pop("metadata", None)
         if metadata:
             merged_meta = dict(record.get("metadata") or {})
             merged_meta.update(metadata)

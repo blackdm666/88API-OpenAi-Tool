@@ -1,7 +1,9 @@
-"""Read-only preflight before an explicit batch authorization."""
+"""Read-only preflight and safe result formatting for batch authorization."""
+import re
+
 from .integrations import fetch_sub2api_accounts
 from .maintenance import token_revision
-from .sub2api_policy import auth_failure_kind, match_remote, normalize_server_url
+from .sub2api_policy import auth_failure_kind, match_remote, normalize_server_url, redact_error
 from .usage_display import parse_time
 from .utils import now_ts
 from tools.auth_2fa_live import parse_account_lines, LINE_SPLIT_RE
@@ -11,6 +13,63 @@ def remove_account_lines(raw_text, emails):
     removed = {str(email).strip().casefold() for email in emails}
     return '\n'.join(line for line in raw_text.splitlines()
                      if LINE_SPLIT_RE.split(line.strip(), maxsplit=1)[0].strip().casefold() not in removed)
+
+
+def _safe_result_text(value, *, fallback='') -> str:
+    text = redact_error(value or fallback)
+    # Network libraries may include an authenticated proxy URL in an exception.
+    text = re.sub(
+        r'(?i)\b((?:https?|socks5h?)://)[^/\s:@]+:[^@\s/]+@',
+        r'\1[已隐藏]@[代理地址]/',
+        text,
+    )
+    text = re.sub(
+        r'(?i)\b(password|passwd|totp(?:_secret)?|secret)(\s*[=:]\s*)[^\s,;}]+',
+        r'\1\2[已隐藏]',
+        text,
+    )
+    return text[:800]
+
+
+def authorization_result_view(result, title='授权结果'):
+    """Return a token-free model suitable for logs and the Tk result window."""
+    rows = []
+    for item in result.get('results') or []:
+        if not isinstance(item, dict):
+            continue
+        ok = bool(item.get('ok'))
+        message = '授权成功' if ok else _safe_result_text(item.get('message'), fallback='未提供失败原因')
+        rows.append({
+            'status': '成功' if ok else '失败',
+            'email': str(item.get('email') or '未知账号'),
+            'message': message,
+            'report_path': str(item.get('report_path') or ''),
+        })
+    for item in result.get('skipped') or []:
+        if not isinstance(item, dict):
+            continue
+        rows.append({
+            'status': '跳过',
+            'email': str(item.get('email') or '未知账号'),
+            'message': _safe_result_text(item.get('reason'), fallback='未提供跳过原因'),
+            'report_path': '',
+        })
+    for item in result.get('input_errors') or []:
+        rows.append({
+            'status': '输入错误',
+            'email': '',
+            'message': _safe_result_text(item, fallback='输入格式错误'),
+            'report_path': '',
+        })
+    return {
+        'title': str(title or '授权结果'),
+        'success_count': int(result.get('success_count') or 0),
+        'fail_count': int(result.get('fail_count') or 0),
+        'skipped_count': int(result.get('skipped_count') or 0),
+        'input_error_count': int(result.get('input_error_count') or 0),
+        'summary_path': str(result.get('summary_path') or ''),
+        'rows': rows,
+    }
 
 
 def plan_authorization(accounts, local_records, remotes):
@@ -60,7 +119,16 @@ def plan_authorization(accounts, local_records, remotes):
     return eligible, skipped
 
 
-def run_checked_authorization(raw_text, settings, local_records, runner, options, *, log_fn=None):
+def run_checked_authorization(
+    raw_text,
+    settings,
+    local_records,
+    runner,
+    options,
+    *,
+    runner_settings=None,
+    log_fn=None,
+):
     accounts, errors = parse_account_lines(raw_text)
     if errors:
         raise ValueError('2FA 输入包含无效行，请修正后再补授权')
@@ -72,6 +140,7 @@ def run_checked_authorization(raw_text, settings, local_records, runner, options
         for item in skipped:
             log_fn(f"2FA 跳过 {item['email']}：{item['reason']}")
         log_fn(f'2FA 核对完成：输入 {len(accounts)}，需授权 {len(eligible)}，跳过 {len(skipped)}')
-    result = (runner('\n'.join(a.raw_line for a in eligible), settings, **options) if eligible else
+    execution_settings = settings if runner_settings is None else runner_settings
+    result = (runner('\n'.join(a.raw_line for a in eligible), execution_settings, **options) if eligible else
               {'success_count': 0, 'fail_count': 0, 'input_error_count': 0, 'results': [], 'summary_path': ''})
     return {**result, 'skipped_count': len(skipped), 'skipped': skipped, 'checked_count': len(accounts)}

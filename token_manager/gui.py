@@ -114,10 +114,15 @@ class TokenManagerGUI(
         self.auto_auth_stop = threading.Event()
         self.auto_refresh_thread: threading.Thread | None = None
         self.preview_text_value = ""
+        self.auth2fa_last_result = None
+        self._update_check_inflight = False
+        self._update_download_inflight = False
+        self._pending_startup_update = None
 
         self.tokens_dir_var = tk.StringVar(value=str(self.config.get("tokens_dir") or ""))
         self.outputs_dir_var = tk.StringVar(value=str(self.config.get("outputs_dir") or ""))
         self.proxy_var = tk.StringVar(value=str(self.config.get("http_proxy") or ""))
+        self.auth_proxy_var = tk.StringVar(value=str(self.config.get("auth_proxy") or ""))
         self.refresh_workers_var = tk.IntVar(value=int(self.config.get("refresh_workers") or 6))
         self.upload_workers_var = tk.IntVar(value=int(self.config.get("upload_workers") or 4))
         auth2fa_mode = str(self.config.get("auth_2fa_mode") or "protocol").strip().lower()
@@ -148,12 +153,9 @@ class TokenManagerGUI(
 
         integrations = self.config.get("integrations") or {}
         sub2api = integrations.get("sub2api") or {}
-        self.sub2api_auth_mode_var = tk.StringVar(value=str(sub2api.get("auth_mode") or "auto"))
         self.sub2api_url_var = tk.StringVar(value=str(sub2api.get("api_url") or ""))
         self.sub2api_key_var = tk.StringVar(value=str(sub2api.get("api_key") or ""))
         self.sub2api_group_ids_var = tk.StringVar(value=str(sub2api.get("group_ids") or "2"))
-        self.sub2api_admin_email_var = tk.StringVar(value=str(sub2api.get("admin_email") or ""))
-        self.sub2api_admin_password_var = tk.StringVar(value=str(sub2api.get("admin_password") or ""))
 
         self.upload_target_var = tk.StringVar(value='sub2api')
         self.import_source_var = tk.StringVar(value='Sub2API')
@@ -173,6 +175,7 @@ class TokenManagerGUI(
         self.reload_tokens()
         self.poll_logs()
         self.update_ui_timer()
+        self.root.after(2500, lambda: self.check_for_updates(silent=True, startup=True))
         self.root.after(60000, self.poll_remote_snapshot)
         self.root.after(5000, self.poll_sub2api_concurrency)
         self.root.after(800, self.initial_remote_load)

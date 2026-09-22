@@ -91,6 +91,7 @@ class CredentialVault:
                 incoming[key] = value
             data.update(incoming)
             self._write_accounts(data)
+            self._remove_legacy_after_migration()
             return len(data)
 
     def _write_accounts(self, data):
@@ -107,12 +108,30 @@ class CredentialVault:
             if os.path.exists(temp):
                 os.unlink(temp)
 
+    def _remove_legacy_after_migration(self):
+        """Remove the old vault only after the replacement was written.
+
+        Older releases stored the DPAPI file below
+        ``Documents/OpenAI-Token-Manager/credentials``.  When a current
+        vault did not exist, ``load`` transparently read that file; without
+        removing it after a successful write, a later migration or backup
+        could resurrect deleted 2FA records.
+        """
+        if self.legacy_path and self.legacy_path != self.path and self.path.exists():
+            try:
+                self.legacy_path.unlink(missing_ok=True)
+            except OSError:
+                # The current vault is authoritative.  A locked legacy file
+                # must not make saving/deleting the current data fail.
+                pass
+
     def delete_accounts(self, emails):
         with _lock:
             data = self.load()
             removed = {str(email).strip().lower() for email in emails}.intersection(data)
             if removed:
                 self._write_accounts({key: value for key, value in data.items() if key not in removed})
+                self._remove_legacy_after_migration()
             return removed
 
     def lookup(self, email):

@@ -303,3 +303,33 @@ class CheckList(ttk.Frame):
     def select_all(self, enabled=True):
         for variable in self.variables.values():
             variable.set(enabled)
+
+
+class ScrollableFrame(ttk.Frame):
+    """A tab page whose long settings content stays reachable on small screens."""
+
+    def __init__(self, parent, *, height=420):
+        super().__init__(parent)
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(0, weight=1)
+        self.canvas = tk.Canvas(
+            self,
+            height=height,
+            highlightthickness=0,
+            borderwidth=0,
+            background="#ffffff",
+        )
+        self.scrollbar = ModernScrollbar(self, orient="vertical", command=self.canvas.yview)
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        self.canvas.grid(row=0, column=0, sticky="nsew")
+        self.scrollbar.grid(row=0, column=1, sticky="ns", padx=(4, 0))
+        self.body = ttk.Frame(self.canvas, padding=2, style="Card.TFrame")
+        self.window_id = self.canvas.create_window(0, 0, anchor="nw", window=self.body)
+        self.canvas.bind(
+            "<Configure>",
+            lambda event: self.canvas.itemconfigure(self.window_id, width=event.width),
+        )
+        self.body.bind(
+            "<Configure>",
+            lambda _event: self.canvas.configure(scrollregion=self.canvas.bbox("all")),
+        )

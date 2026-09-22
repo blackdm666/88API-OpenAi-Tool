@@ -93,6 +93,7 @@ class LayoutTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             cfg = default_config()
             cfg.update(tokens_dir=folder + "/tokens", outputs_dir=folder + "/outputs")
+            cfg["auth_proxy"] = "socks5://authorization.test:1080"
             cfg["integrations"]["sub2api"].update(
                 concurrency=17, priority=0, codex_fingerprint_mode="device"
             )
@@ -167,6 +168,10 @@ class LayoutTest(unittest.TestCase):
                             settings["codex_fingerprint_mode"],
                         ),
                         (17, 0, "device"),
+                    )
+                    self.assertEqual(
+                        app.current_settings()["auth_proxy"],
+                        "socks5://authorization.test:1080",
                     )
                     self.assertIn(str(app.log_panel), app.main_vertical_pane.panes())
                     self.assertFalse(hasattr(app,'info_notebook'))
@@ -262,6 +267,25 @@ class LayoutTest(unittest.TestCase):
                     ]
                     self.assertEqual(len(dialogs), 1)
                     owner = dialogs[0]
+                    settings_buttons = [
+                        widget
+                        for widget in descendants(owner)
+                        if widget.winfo_class() == "TButton"
+                    ]
+                    save_button = next(
+                        widget for widget in settings_buttons
+                        if widget.cget("text") == "保存配置"
+                    )
+                    cancel_button = next(
+                        widget for widget in settings_buttons
+                        if widget.cget("text") == "取消"
+                    )
+                    for button in (save_button, cancel_button):
+                        self.assertTrue(button.winfo_ismapped())
+                        self.assertLessEqual(
+                            button.winfo_rooty() + button.winfo_height(),
+                            owner.winfo_rooty() + owner.winfo_height(),
+                        )
                     variables = {'group_ids':tk.StringVar(value='2'), 'proxy_id':tk.StringVar(value='8')}
                     app.show_sub2api_option_picker(owner, {
                         'groups':[{'id':2,'name':'PLUS','platform':'openai','status':'active'}],
@@ -301,6 +325,93 @@ class LayoutTest(unittest.TestCase):
                     self.assertEqual(checklist.selected(), [24])
                     checklist.destroy()
                     self.assertEqual(style.lookup('TCombobox', 'selectforeground', ('readonly',)), app.palette['text'])
+                    auth_proxy_entries = [
+                        widget
+                        for widget in descendants(app.auth2fa_tab)
+                        if widget.winfo_class() == "TEntry"
+                        and str(widget.cget("textvariable")) == str(app.auth_proxy_var)
+                    ]
+                    self.assertEqual(auth_proxy_entries, [])
+                    settings_auth_proxy_entries = [
+                        widget
+                        for widget in descendants(app.settings_tab)
+                        if widget.winfo_class() == "TEntry"
+                        and str(widget.cget("textvariable")) == str(app.auth_proxy_var)
+                    ]
+                    self.assertEqual(len(settings_auth_proxy_entries), 1)
+                    settings_labels = [
+                        str(widget.cget("text"))
+                        for widget in descendants(app.settings_tab)
+                        if widget.winfo_class() == "TLabel"
+                    ]
+                    self.assertIn(
+                        "软件接口代理（仅Sub2API管理接口）",
+                        settings_labels,
+                    )
+                    self.assertIn(
+                        "OAuth授权代理（仅OAuth/2FA）",
+                        settings_labels,
+                    )
+                    add_auth2fa_buttons = [
+                        widget
+                        for widget in descendants(app.auth2fa_tab)
+                        if widget.winfo_class() == "TButton"
+                        and widget.cget("text") == "添加到左侧凭据"
+                    ]
+                    self.assertEqual(len(add_auth2fa_buttons), 1)
+                    auth_result_buttons = [
+                        widget
+                        for widget in descendants(app.auth2fa_tab)
+                        if widget.winfo_class() == "TButton"
+                        and widget.cget("text") == "查看本次结果"
+                    ]
+                    self.assertEqual(len(auth_result_buttons), 1)
+                    self.assertIn("disabled", auth_result_buttons[0].state())
+                    app.auth2fa_last_result = {
+                        "title": "智能补授权结果",
+                        "success_count": 1,
+                        "fail_count": 1,
+                        "skipped_count": 1,
+                        "input_error_count": 0,
+                        "summary_path": "batch.json",
+                        "rows": [
+                            {
+                                "status": "失败",
+                                "email": "failed@example.test",
+                                "message": "登录验证失败",
+                                "report_path": "failed.json",
+                            },
+                            {
+                                "status": "跳过",
+                                "email": "healthy@example.test",
+                                "message": "授权状态正常，无需重复登录",
+                                "report_path": "",
+                            },
+                        ],
+                    }
+                    app.show_auth2fa_results()
+                    root.update_idletasks()
+                    result_dialog = next(
+                        widget
+                        for widget in root.winfo_children()
+                        if isinstance(widget, tk.Toplevel)
+                        and widget.title() == "智能补授权结果"
+                    )
+                    result_tree = next(
+                        widget
+                        for widget in descendants(result_dialog)
+                        if widget.winfo_class() == "Treeview"
+                    )
+                    self.assertEqual(
+                        [result_tree.item(row, "values")[0] for row in result_tree.get_children()],
+                        ["失败", "跳过"],
+                    )
+                    self.assertTrue(any(
+                        widget.winfo_class() == "Text"
+                        and "登录验证失败" in widget.get("1.0", "end")
+                        for widget in descendants(result_dialog)
+                    ))
+                    result_dialog.destroy()
                     sample = __import__('tkinter.ttk', fromlist=['Combobox']).Combobox(root, values=['上下文池','关闭'], state='readonly')
                     popup = root.tk.call('ttk::combobox::PopdownWindow', str(sample))
                     listbox = str(popup) + '.f.l'
@@ -332,7 +443,7 @@ class LayoutTest(unittest.TestCase):
                     self.assertEqual(errors, [])
                     app.config['integrations']['sub2api'].update(api_url='https://old.test', access_token='old-session', refresh_token='old-session-refresh')
                     app.sub2api_url_var.set('https://new.test')
-                    self.assertEqual(app.current_settings()['integrations']['sub2api']['access_token'], '')
+                    self.assertNotIn('access_token', app.current_settings()['integrations']['sub2api'])
             finally:
                 for event in root.tk.call("after", "info"):
                     root.after_cancel(event)

@@ -25,6 +25,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from token_manager.config import load_app_config
 from token_manager.constants import APP_DIR
+from token_manager.auth_proxy import browser_proxy_url
 from token_manager.oauth import OAuthCallbackServer, exchange_callback, generate_oauth_start
 from token_manager.store import TokenStore
 from token_manager.utils import now_rfc3339, parse_callback_url
@@ -231,7 +232,7 @@ def _build_browser_command(
         "--new-window",
     ]
     if str(proxy_url or "").strip():
-        command.append(f"--proxy-server={str(proxy_url).strip()}")
+        command.append(f"--proxy-server={browser_proxy_url(proxy_url)}")
     command.append(start_url)
     return command
 

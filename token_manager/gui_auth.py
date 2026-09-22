@@ -5,19 +5,23 @@ from pathlib import Path
 from copy import deepcopy
 from .maintenance import recovery_cycle
 from .credential_vault import CredentialVault
-from .integrations import fetch_sub2api_proxy_endpoints
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
-from .auth_batch import run_checked_authorization, remove_account_lines
+from .auth_batch import authorization_result_view, run_checked_authorization, remove_account_lines
 
 from tools.auth_2fa_browser import run_authorize_batch_lines_browser
 from tools.auth_2fa_live import parse_account_lines, run_authorize_batch_lines
+from .auth_proxy import (
+    authorization_proxy,
+    authorization_proxy_pool,
+    authorization_settings,
+)
 from .constants import DEFAULT_AUTH_TIMEOUT_SECONDS
-from .sub2api_policy import proxy_candidates
 from .oauth import browser_assisted_authorize, exchange_callback, generate_oauth_start
 from .services import refresh_record
 from .gui_widgets import ModernScrollbar, center_window
+from .utils import now_rfc3339
 
 
 def saved_credential_lines(accounts: dict, allowed_emails=None) -> str:
@@ -36,6 +40,123 @@ def saved_credential_lines(accounts: dict, allowed_emails=None) -> str:
 
 
 class GUIAuthMixin:
+    def show_auth2fa_results(self):
+        model = getattr(self, 'auth2fa_last_result', None)
+        if not model:
+            self.log('当前没有可查看的授权结果', 'warning')
+            return
+        dialog = tk.Toplevel(self.root)
+        dialog.title(model.get('title') or '授权结果')
+        dialog.geometry('980x600')
+        dialog.minsize(760, 480)
+        dialog.transient(self.root)
+        center_window(dialog, self.root)
+
+        frame = ttk.Frame(dialog, padding=14)
+        frame.pack(fill='both', expand=True)
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(1, weight=1)
+        summary = (
+            f"成功 {model['success_count']}  ·  失败 {model['fail_count']}  ·  "
+            f"跳过 {model['skipped_count']}  ·  输入错误 {model['input_error_count']}"
+        )
+        ttk.Label(frame, text=summary, style='Stats.TLabel').grid(
+            row=0, column=0, columnspan=2, sticky='w', pady=(0, 10)
+        )
+
+        tree = ttk.Treeview(
+            frame,
+            columns=('status', 'email', 'message'),
+            show='headings',
+            selectmode='browse',
+        )
+        tree.heading('status', text='结果')
+        tree.heading('email', text='账号')
+        tree.heading('message', text='原因 / 说明')
+        tree.column('status', width=80, minwidth=70, anchor='center', stretch=False)
+        tree.column('email', width=270, minwidth=190)
+        tree.column('message', width=560, minwidth=300)
+        tree.grid(row=1, column=0, sticky='nsew')
+        scroll = ModernScrollbar(frame, orient='vertical', command=tree.yview)
+        tree.configure(yscrollcommand=scroll.set)
+        scroll.grid(row=1, column=1, sticky='ns', padx=(4, 0))
+        tree.tag_configure('成功', foreground='#15803d')
+        tree.tag_configure('失败', foreground='#b91c1c')
+        tree.tag_configure('跳过', foreground='#9a6700')
+        tree.tag_configure('输入错误', foreground='#b91c1c')
+
+        row_index = {}
+        for index, row in enumerate(model.get('rows') or []):
+            iid = f'auth-result-{index}'
+            row_index[iid] = row
+            tree.insert(
+                '',
+                'end',
+                iid=iid,
+                values=(row['status'], row['email'], row['message']),
+                tags=(row['status'],),
+            )
+
+        ttk.Label(frame, text='选中详情（已脱敏）', style='Card.TLabel').grid(
+            row=2, column=0, columnspan=2, sticky='w', pady=(12, 5)
+        )
+        detail = tk.Text(
+            frame,
+            height=7,
+            wrap='word',
+            font=('Microsoft YaHei UI', 9),
+            bg=self.palette['card_alt'],
+            fg=self.palette['text'],
+            relief='flat',
+            padx=10,
+            pady=8,
+        )
+        detail.grid(row=3, column=0, columnspan=2, sticky='ew')
+        detail.configure(state='disabled')
+
+        selected_text = {'value': ''}
+
+        def show_selected(_event=None):
+            selected = tree.selection()
+            row = row_index.get(selected[0]) if selected else None
+            if not row:
+                return
+            lines = [
+                f"结果：{row['status']}",
+                f"账号：{row['email'] or '未识别'}",
+                f"原因：{row['message']}",
+            ]
+            if row.get('report_path'):
+                lines.append(f"诊断报告：{row['report_path']}")
+            if model.get('summary_path'):
+                lines.append(f"批量汇总：{model['summary_path']}")
+            selected_text['value'] = '\n'.join(lines)
+            detail.configure(state='normal')
+            detail.delete('1.0', 'end')
+            detail.insert('1.0', selected_text['value'])
+            detail.configure(state='disabled')
+
+        tree.bind('<<TreeviewSelect>>', show_selected)
+
+        actions = ttk.Frame(frame)
+        actions.grid(row=4, column=0, columnspan=2, sticky='ew', pady=(10, 0))
+
+        def copy_selected():
+            if not selected_text['value']:
+                return
+            self.root.clipboard_clear()
+            self.root.clipboard_append(selected_text['value'])
+            self.log('已复制选中的授权结果详情')
+
+        ttk.Button(actions, text='关闭', command=dialog.destroy).pack(side='right')
+        ttk.Button(actions, text='复制选中详情', command=copy_selected).pack(side='right', padx=8)
+        if tree.get_children():
+            first = tree.get_children()[0]
+            tree.selection_set(first)
+            tree.focus(first)
+            show_selected()
+        self._install_default_tooltips(dialog)
+
     def delete_saved_auth2fa_accounts(self, emails):
         if self.is_running() or self.auto_refresh_running:
             raise ValueError('请先停止自动维护并等待授权任务完成，再删除资料')
@@ -109,6 +230,7 @@ class GUIAuthMixin:
         ttk.Button(buttons, text='全选显示结果', command=lambda: tree.selection_set(tree.get_children())).pack(side='right', padx=6)
         search.trace_add('write', populate)
         populate()
+        self._install_default_tooltips(dialog)
 
     def update_vault_status(self):
         try:
@@ -135,6 +257,82 @@ class GUIAuthMixin:
             self.log('2FA 资料保存失败：' + str(exc), 'error')
             return False
 
+    def add_auth2fa_to_local_credentials(self):
+        """Add safe local placeholders; secrets remain in the encrypted vault."""
+        if self.is_running() or self.auto_refresh_running:
+            self.log('请先停止维护并等待任务完成，再添加2FA凭据', 'warning')
+            return
+        if not self.save_auth2fa_credentials(silent=True):
+            return
+        raw_text = self.auth2fa_input.get('1.0', 'end')
+        accounts, errors = parse_account_lines(raw_text)
+        if not accounts and not errors:
+            try:
+                saved = CredentialVault().load()
+                raw_text = '\n'.join(
+                    f"{item['email']}----{item['password']}----{item['totp_secret']}"
+                    for item in saved.values()
+                )
+                accounts, errors = parse_account_lines(raw_text)
+            except Exception as exc:
+                messagebox.showerror('资料库读取失败', str(exc), parent=self.root)
+                return
+        if errors:
+            messagebox.showerror(
+                '2FA资料格式错误',
+                '请先修正无效行：\n' + '\n'.join(errors[:8]),
+                parent=self.root,
+            )
+            return
+        if not accounts:
+            messagebox.showinfo('没有可添加的账号', '请先导入或载入2FA资料。', parent=self.root)
+            return
+
+        existing = {
+            str(record.get('email') or '').strip().casefold(): record
+            for record in self.store.load_all()
+            if str(record.get('email') or '').strip()
+        }
+        added = []
+        already_present = []
+        for account in accounts:
+            key = account.email.strip().casefold()
+            record = existing.get(key)
+            if record and any(record.get(field) for field in ('access_token', 'refresh_token', 'id_token')):
+                already_present.append(account.email)
+                continue
+            self.store.save_record({
+                'email': account.email,
+                'type': 'codex',
+                'metadata': {
+                    'auth2fa_pending': True,
+                    'auth2fa_added_at': now_rfc3339(),
+                },
+            }, filename=record.get('_filename') if record else None)
+            added.append(account.email)
+
+        self.reload_tokens(save_first=False)
+        added_keys = {email.casefold() for email in added}
+        selected_ids = [
+            str(record.get('_filename') or record.get('email'))
+            for record in self.records
+            if str(record.get('email') or '').strip().casefold() in added_keys
+        ]
+        if selected_ids:
+            self.token_tree.selection_set(selected_ids)
+            self.on_selection_changed()
+        if added:
+            self.log(f'已将 {len(added)} 个2FA账号添加到左侧本地凭据，状态为“待授权”')
+        if already_present:
+            self.log(f'{len(already_present)} 个账号已有OAuth凭据，未覆盖原凭据')
+        messagebox.showinfo(
+            '添加完成',
+            f'已添加到左侧：{len(added)} 个\n'
+            f'已有OAuth凭据未覆盖：{len(already_present)} 个\n'
+            '密码和2FA密匙仍只保存在加密资料库中。',
+            parent=self.root,
+        )
+
     def load_auth2fa_credentials(self):
         if self.is_running() or self.auto_refresh_running:
             self.log('请先停止维护并等待任务完成，再载入授权资料', 'warning')
@@ -151,15 +349,24 @@ class GUIAuthMixin:
 
     def update_auth2fa_mode_hint(self, *, announce: bool = True, persist: bool = True) -> None:
         mode_label = str(self.auth2fa_mode_var.get() or "协议链").strip() or "协议链"
+        try:
+            proxy_count = len(authorization_proxy_pool({"auth_proxy": self.auth_proxy_var.get()}))
+        except ValueError:
+            proxy_count = 0
+        proxy_hint = (
+            f"OAuth授权代理 {proxy_count} 条"
+            if proxy_count
+            else "OAuth授权代理 直连"
+        )
         if mode_label == "浏览器链":
             browser_name = Path(str(self.browser_path_var.get() or "").strip()).name
             port = int(self.browser_debug_port_var.get() or 9333)
             if browser_name:
-                hint = f"当前模式 浏览器链 已选中 走独立浏览器 端口 {port}  浏览器 {browser_name}"
+                hint = f"当前模式 浏览器链 · {proxy_hint} · 端口 {port} · 浏览器 {browser_name}"
             else:
-                hint = "当前模式 浏览器链 已选中 但浏览器路径还没填"
+                hint = f"当前模式 浏览器链 · {proxy_hint} · 浏览器路径未填写"
         else:
-            hint = "当前模式 协议链 已选中 走纯协议授权"
+            hint = f"当前模式 协议链 · {proxy_hint}"
         self.auth2fa_mode_hint_var.set(hint)
         self.root.update_idletasks()
         if persist:
@@ -229,9 +436,22 @@ class GUIAuthMixin:
             return
         self.save_settings(reload_tokens=False, notify=False)
         settings = self.current_settings()
+        if (
+            not authorization_proxy(settings)
+            and str(settings.get("http_proxy") or "").strip()
+        ):
+            self.log(
+                "软件接口代理已设置，但授权代理为空；本次 OAuth/2FA 仍将直连。"
+                "请到“设置 → 基础”填写“授权代理”。",
+                "warning",
+            )
         mode = str(settings.get("auth_2fa_mode") or "protocol").strip().lower()
         workers = max(1, int(settings.get("auth_2fa_live_workers") or 1))
-        save_token = bool(settings.get("auth_2fa_live_save_token", False))
+        # Smart authorization is a credential-repair workflow, not a
+        # report-only login.  A successful OAuth exchange must replace the
+        # local expired/placeholder record; otherwise the left list remains
+        # stale even though the authorization result says “success”.
+        save_token = True
         browser_path = str(settings.get("browser_executable_path") or "").strip()
         browser_debug_port = int(settings.get("browser_auth_start_port") or 9333)
         timeout = int(settings.get("auto_auth_timeout_seconds") or DEFAULT_AUTH_TIMEOUT_SECONDS)
@@ -248,46 +468,73 @@ class GUIAuthMixin:
             self.root.after(0, lambda: self.auth2fa_stats_var.set(f"执行中 {done}/{total_count}"))
 
         def worker():
-            options = dict(workers=workers, save_dir=save_dir, save_token=save_token,
-                           include_secrets=False, quiet=True, log_fn=gui_log, progress_cb=progress)
-            proxy_ids = proxy_candidates((settings.get('integrations') or {}).get('sub2api') or {})
-            if proxy_ids:
-                endpoints = fetch_sub2api_proxy_endpoints(
-                    settings, proxy_url=settings.get('http_proxy', ''), proxy_ids=proxy_ids
-                )
-                proxy_pool = [item['url'] for item in endpoints]
-                if not proxy_pool:
-                    raise ValueError('配置的 Sub2API 代理池没有可用代理，无法启动2FA授权')
-                options['proxy_pool'] = proxy_pool
+            options = dict(
+                workers=workers,
+                save_dir=save_dir,
+                save_token=save_token,
+                include_secrets=False,
+                quiet=True,
+                log_fn=gui_log,
+                progress_cb=progress,
+                proxy_pool=authorization_proxy_pool(settings),
+            )
             runner = run_authorize_batch_lines
             if mode == 'browser':
                 runner = run_authorize_batch_lines_browser
                 options.update(browser_path=browser_path, debug_port_base=browser_debug_port, timeout=timeout)
-            return run_checked_authorization(raw_text, settings, self.store.load_all(), runner, options, log_fn=gui_log)
+            return run_checked_authorization(
+                raw_text,
+                settings,
+                self.store.load_all(),
+                runner,
+                options,
+                runner_settings=authorization_settings(settings),
+                log_fn=gui_log,
+            )
 
         def done(result):
             self.set_running(False, "2FA 批量授权结束")
             if result.get("error"):
-                messagebox.showerror("错误", result["error"])
+                model = authorization_result_view({
+                    'success_count': 0,
+                    'fail_count': 1,
+                    'skipped_count': 0,
+                    'input_error_count': 0,
+                    'results': [{
+                        'ok': False,
+                        'email': '批量任务',
+                        'message': result['error'],
+                        'report_path': '',
+                    }],
+                }, '智能补授权结果')
+                self.auth2fa_last_result = model
+                self.auth2fa_result_button.config(state='normal')
+                self.auth2fa_output_var.set('任务失败 · 点击“查看本次结果”查看原因')
+                self.log(f"智能补授权失败：{model['rows'][0]['message']}", 'error')
+                self.show_auth2fa_results()
                 return
             summary_path = str(result.get("summary_path") or "")
-            self.auth2fa_output_var.set(summary_path)
+            summary_title = "浏览器链批量授权" if mode == "browser" else "2FA 批量授权"
+            model = authorization_result_view(result, summary_title + '结果')
+            self.auth2fa_last_result = model
+            self.auth2fa_result_button.config(state='normal')
+            self.auth2fa_output_var.set(
+                f"本次结果：成功 {model['success_count']} 失败 {model['fail_count']} "
+                f"跳过 {model['skipped_count']} · 点击右侧查看详情"
+            )
             self.auth2fa_stats_var.set(
                 f"完成 成功 {int(result.get('success_count') or 0)} 失败 {int(result.get('fail_count') or 0)} 跳过 {int(result.get('skipped_count') or 0)}"
             )
-            if save_token and int(result.get("success_count") or 0) > 0:
+            if int(result.get("success_count") or 0) > 0:
                 self.reload_tokens(save_first=False)
-            summary_title = "浏览器链批量授权" if mode == "browser" else "2FA 批量授权"
             self.log(f"{summary_title}完成 成功={int(result.get('success_count') or 0)} 失败={int(result.get('fail_count') or 0)} 跳过={int(result.get('skipped_count') or 0)}")
+            for row in model['rows']:
+                if row['status'] in {'失败', '跳过', '输入错误'}:
+                    level = 'error' if row['status'] in {'失败', '输入错误'} else 'warning'
+                    self.log(f"{row['status']} {row['email'] or '未识别'}：{row['message']}", level)
             if summary_path:
                 self.log(f"批量汇总: {summary_path}")
-            messagebox.showinfo(
-                "完成",
-                f"成功 {int(result.get('success_count') or 0)} 个\n"
-                f"失败 {int(result.get('fail_count') or 0)} 个\n"
-                f"跳过 {int(result.get('skipped_count') or 0)} 个（原因见日志）\n"
-                f"{summary_path}",
-            )
+            self.show_auth2fa_results()
 
         status_text = "正在核对 Sub2API 授权状态"
         self.run_background(status_text, worker, done)
@@ -317,7 +564,7 @@ class GUIAuthMixin:
                 callback_url,
                 self.manual_oauth_start,
                 self.config,
-                proxy_url=self.config.get("http_proxy", ""),
+                proxy_url=authorization_proxy(self.config),
             )
             path = self.store.save_token_response(token_data, metadata={"auth_mode": "manual"})
         except Exception as exc:
@@ -339,7 +586,7 @@ class GUIAuthMixin:
             self.log('已有任务或自动维护在运行，未启动自动授权', 'warning')
             return
         settings = self.current_settings()
-        proxy = settings.get("http_proxy", "")
+        proxy = authorization_proxy(settings)
         timeout = int(settings.get("auto_auth_timeout_seconds") or DEFAULT_AUTH_TIMEOUT_SECONDS)
         open_browser = bool(settings.get("open_browser_on_auto_auth", True))
 
@@ -417,7 +664,7 @@ class GUIAuthMixin:
                         if self.maintenance_stop.is_set():
                             break
                         try:
-                            refresh_record(store, record, settings, proxy_url=settings.get("http_proxy", ""), log_fn=self.log)
+                            refresh_record(store, record, settings, proxy_url=authorization_proxy(settings), log_fn=self.log)
                         except Exception as exc:
                             self.log(f"本地到期刷新失败：{exc}", "error")
                     if not self.maintenance_stop.is_set() and any((r.get("sub2api_recovery") or {}).get("enabled") for r in all_records):

@@ -57,6 +57,15 @@ class WorkflowTest(unittest.TestCase):
         self.apply.assert_called_once()
         self.probe.assert_called_once()
 
+    def test_reauthorization_uses_dedicated_auth_proxy_not_remote_proxy_pool(self):
+        self.settings['http_proxy'] = 'http://software-interface.test:8080'
+        self.settings['auth_proxy'] = 'socks5://authorization.test:1080'
+        self.settings['integrations']['sub2api']['proxy_id'] = '7,8,9'
+        recovery_cycle(self.store, self.settings)
+        auth_settings = self.auth.call_args.args[3]
+        self.assertEqual(auth_settings['http_proxy'], 'socks5://authorization.test:1080')
+        self.assertEqual(auth_settings['integrations']['sub2api']['proxy_id'], '7,8,9')
+
     def test_uploaded_account_is_auto_enrolled_without_monitor_toggle(self):
         local = self.store.load_all()[0]
         local['sub2api_recovery'] = {}

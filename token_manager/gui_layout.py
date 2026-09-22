@@ -16,6 +16,7 @@ class GUILayoutMixin:
         self._build_log_panel(bottom)
         self._build_token_panel(left)
         self._build_right_panel(right)
+        self._install_default_tooltips(shell)
         self.root.after(120, self._apply_initial_pane_layout)
 
     def _build_main_panes(self, parent):
@@ -81,7 +82,7 @@ class GUILayoutMixin:
             "监控选中": "绑定选中账号并纳入 Sub2API 自动维护。",
             "删除账号": "删除本地凭据文件，不删除远端账号。",
             "启动自动维护": "周期检查令牌、401、补授权、上传和运行验证。",
-            "导入 / 导出": "预览、导入或导出账号数据格式。",
+            "速刷号购买": "打开固定的速刷号购买页面，不会上传本地账号或凭据。",
         }
         def action(text, command, row, column, style="TButton"):
             button = ttk.Button(action_frame, text=text, command=command, style=style)
@@ -96,7 +97,7 @@ class GUILayoutMixin:
         action("监控选中", lambda: self.set_recovery_selected(True), 1, 2)
         action("删除账号", self.delete_selected, 2, 0)
         self.auto_refresh_button = action("启动自动维护", self.toggle_auto_refresh, 2, 1)
-        action("导入 / 导出", lambda: self.right_notebook.select(self.convert_tab), 2, 2)
+        action("速刷号购买", self.open_account_purchase_page, 2, 2)
 
         filter_frame = ttk.Frame(parent, style="Card.TFrame")
         filter_frame.grid(row=1, column=0, sticky="ew", pady=(0, 8))
@@ -126,7 +127,7 @@ class GUILayoutMixin:
         status_combo = ttk.Combobox(
             filter_frame,
             textvariable=self.status_filter_var,
-            values=["全部状态", "未过期", "已过期", "可调度", "授权失效", "待补授权", "已停用", "上传异常"],
+            values=["全部状态", "正常", "失效", "上传异常"],
             state="readonly",
         )
         status_combo.grid(row=0, column=5, sticky="ew", padx=3, pady=3)
@@ -148,12 +149,12 @@ class GUILayoutMixin:
         self.token_tree.heading("remaining", text="剩余时间")
         self.token_tree.heading("upload", text="上传状态")
         self.token_tree.heading("recovery", text="Sub2API监控")
-        self.token_tree.column("recovery", width=120, stretch=False)
+        self.token_tree.column("recovery", width=90, stretch=False, anchor=tk.CENTER)
         self.token_tree.column("email", width=190, stretch=True)
         self.token_tree.column("plan", width=88, stretch=False, anchor=tk.CENTER)
         self.token_tree.column("status", width=96, stretch=False, anchor=tk.CENTER)
         self.token_tree.column("remaining", width=120, stretch=False, anchor=tk.CENTER)
-        self.token_tree.column("upload", width=150, stretch=True)
+        self.token_tree.column("upload", width=105, stretch=False, anchor=tk.CENTER)
         scrollbar_y = ModernScrollbar(list_frame, orient=tk.VERTICAL, command=self.token_tree.yview)
         scrollbar_x = ModernScrollbar(list_frame, orient=tk.HORIZONTAL, command=self.token_tree.xview)
         self.token_tree.configure(yscrollcommand=scrollbar_y.set, xscrollcommand=scrollbar_x.set)
@@ -200,10 +201,18 @@ class GUILayoutMixin:
         self._build_settings_tab(self.settings_tab)
         self.right_notebook.select(self.sub2api_tab)
         self.workspace_buttons={}
-        for tab,label in [(self.detail_tab,'详情'),(self.auth_tab,'授权'),(self.auth2fa_tab,'2FA'),(self.convert_tab,'导入导出'),(self.sub2api_tab,'Sub2API'),(self.settings_tab,'设置')]:
-            button=ttk.Button(self.workspace_nav,text=label,command=lambda t=tab:self.right_notebook.select(t),style='Nav.TButton')
+        for tab,label in [(self.detail_tab,'详情'),(self.auth_tab,'授权'),(self.auth2fa_tab,'2FA'),(self.sub2api_tab,'Sub2API'),(self.settings_tab,'设置')]:
+            command = lambda t=tab: self.right_notebook.select(t)
+            button=ttk.Button(self.workspace_nav,text=label,command=command,style='Nav.TButton')
             button.pack(side='left',padx=1)
             self.workspace_buttons[str(tab)]=button
+        purchase_button = ttk.Button(
+            self.workspace_nav,
+            text='速刷号购买',
+            command=self.open_account_purchase_page,
+            style='Nav.TButton',
+        )
+        purchase_button.pack(side='left', padx=1)
         def mark_tab(event=None):
             current=self.right_notebook.select()
             for tab,button in self.workspace_buttons.items():
@@ -279,7 +288,7 @@ class GUILayoutMixin:
 
         controls = ttk.Frame(parent, style="Card.TFrame")
         controls.grid(row=0, column=0, sticky="ew", pady=(0, 8))
-        for column in range(6):
+        for column in range(7):
             controls.columnconfigure(column, weight=1)
         ttk.Label(controls, text="预览格式", style="Card.TLabel").grid(row=0, column=0, sticky="w", padx=3, pady=3)
         ttk.Combobox(
@@ -293,6 +302,7 @@ class GUILayoutMixin:
             (
                 ("生成预览", self.build_preview_from_var),
                 ("复制预览", self.copy_preview),
+                ("导出为文件", self.export_preview_file),
                 ("导入剪贴板", self.import_from_clipboard),
                 ("导入文件", self.import_from_file),
             ),
@@ -336,14 +346,24 @@ class GUILayoutMixin:
         ttk.Label(controls, text="线程", style="Card.TLabel").grid(row=0, column=4, sticky="e", padx=3, pady=3)
         ttk.Spinbox(controls, from_=1, to=MAX_REFRESH_WORKERS, textvariable=self.auth2fa_workers_var, width=8).grid(row=0, column=5, sticky="w", padx=3, pady=3)
         ttk.Button(controls, text="智能补授权", command=self.start_auth2fa_batch, style="Primary.TButton").grid(row=0, column=6, sticky="ew", padx=3, pady=3)
-        ttk.Checkbutton(controls, text="成功写入 Tokens", variable=self.auth2fa_save_token_var).grid(row=1, column=0, columnspan=2, sticky="w", padx=3, pady=3)
+        ttk.Label(
+            controls,
+            text="智能补授权成功后自动写入 Tokens",
+            style="CardSubtle.TLabel",
+        ).grid(row=1, column=0, columnspan=2, sticky="w", padx=3, pady=3)
         ttk.Label(controls, text="每行一个 账号----密码----2FA密匙", style="CardSubtle.TLabel").grid(row=1, column=2, columnspan=3, sticky="w", padx=3, pady=3)
         ttk.Label(controls, textvariable=self.auth2fa_stats_var, style="Stats.TLabel").grid(row=1, column=5, columnspan=2, sticky="e", padx=3, pady=3)
         ttk.Label(controls, textvariable=self.auth2fa_mode_hint_var, style="CardSubtle.TLabel").grid(row=2, column=0, columnspan=7, sticky="w", padx=3, pady=(0, 3))
         ttk.Button(controls, text='加密保存资料', command=self.save_auth2fa_credentials).grid(row=3, column=0, columnspan=2, sticky='ew', padx=3)
         ttk.Button(controls, text='载入已存资料', command=self.load_auth2fa_credentials).grid(row=3, column=2, columnspan=2, sticky='ew', padx=3)
         ttk.Button(controls, text='管理已存资料', command=self.manage_auth2fa_credentials).grid(row=3, column=4, columnspan=3, sticky='ew', padx=3)
-        ttk.Label(controls, textvariable=self.auth2fa_vault_var, style='CardSubtle.TLabel', wraplength=570).grid(row=4, column=0, columnspan=7, sticky='w', padx=3, pady=4)
+        ttk.Button(
+            controls,
+            text='添加到左侧凭据',
+            command=self.add_auth2fa_to_local_credentials,
+            style='Primary.TButton',
+        ).grid(row=4, column=0, columnspan=2, sticky='ew', padx=3, pady=3)
+        ttk.Label(controls, textvariable=self.auth2fa_vault_var, style='CardSubtle.TLabel', wraplength=570).grid(row=4, column=2, columnspan=5, sticky='w', padx=3, pady=4)
 
         input_card = ttk.Frame(parent, style="Card.TFrame")
         input_card.grid(row=1, column=0, sticky="nsew")
@@ -365,7 +385,18 @@ class GUILayoutMixin:
 
         footer = ttk.Frame(parent, style="Card.TFrame")
         footer.grid(row=2, column=0, sticky="ew", pady=(8, 0))
-        ttk.Label(footer, textvariable=self.auth2fa_output_var, style="CardSubtle.TLabel").pack(side=tk.LEFT)
+        ttk.Label(
+            footer,
+            textvariable=self.auth2fa_output_var,
+            style="CardSubtle.TLabel",
+        ).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.auth2fa_result_button = ttk.Button(
+            footer,
+            text="查看本次结果",
+            command=self.show_auth2fa_results,
+            state="disabled",
+        )
+        self.auth2fa_result_button.pack(side=tk.RIGHT, padx=(8, 0))
 
 
 
@@ -450,7 +481,31 @@ class GUILayoutMixin:
         basic_frame.pack(fill=tk.BOTH, expand=True)
         self._add_labeled_entry(basic_frame, "Tokens 目录", self.tokens_dir_var, browse=True)
         self._add_labeled_entry(basic_frame, "输出目录", self.outputs_dir_var, browse_outputs=True)
-        self._add_labeled_entry(basic_frame, "全局代理", self.proxy_var)
+        self._add_labeled_entry(basic_frame, "软件接口代理（仅Sub2API管理接口）", self.proxy_var)
+        self._add_labeled_entry(
+            basic_frame,
+            "OAuth授权代理（仅OAuth/2FA）",
+            self.auth_proxy_var,
+        )
+        ttk.Label(
+            basic_frame,
+            text="支持多个代理：每行一个，或用逗号/分号分隔；支持 http、https、socks5、socks5h。留空表示直连。",
+            style="CardSubtle.TLabel",
+            wraplength=700,
+        ).pack(fill=tk.X, pady=(0, 4))
+        update_hint = ttk.Frame(basic_frame, style="Card.TFrame")
+        update_hint.pack(fill=tk.X, pady=4)
+        ttk.Label(
+            update_hint,
+            text="云更新地址（固定）",
+            width=18,
+            style="Card.TLabel",
+        ).pack(side=tk.LEFT)
+        ttk.Label(
+            update_hint,
+            text="启动时自动检查 · https://test.88api.ai/downloads/openai-token-manager/",
+            style="CardSubtle.TLabel",
+        ).pack(side=tk.LEFT, fill=tk.X, expand=True)
         self._add_labeled_spin(basic_frame, "刷新线程", self.refresh_workers_var, 1, MAX_REFRESH_WORKERS)
         self._add_labeled_spin(basic_frame, "上传线程", self.upload_workers_var, 1, MAX_UPLOAD_WORKERS)
         self._add_labeled_spin(basic_frame, "自动维护检查秒数", self.auto_interval_var, 30, 3600)
@@ -459,6 +514,7 @@ class GUILayoutMixin:
         tools.pack(fill=tk.X, pady=(8, 0))
         ttk.Button(tools, text="整理导出文件", command=self.organize_output_dirs).pack(side=tk.LEFT)
         ttk.Button(tools, text="清理 Tokens", command=self.cleanup_tokens_dir).pack(side=tk.LEFT, padx=6)
+        ttk.Button(tools, text="检查更新", command=self.check_for_updates).pack(side=tk.LEFT, padx=6)
         ttk.Button(tools, text="保存设置", command=self.save_settings, style="Primary.TButton").pack(side=tk.RIGHT)
 
         oauth_frame = ttk.LabelFrame(oauth_tab, text="OAuth 配置", padding=10, style="Card.TLabelframe")
@@ -477,12 +533,14 @@ class GUILayoutMixin:
         sub2api_frame = ttk.LabelFrame(sub2api_tab, text="Sub2API 配置", padding=10, style="Card.TLabelframe")
         sub2api_frame.pack(fill=tk.BOTH, expand=True)
         self._add_labeled_entry(sub2api_frame, "Sub2API URL", self.sub2api_url_var)
-        self._add_labeled_entry(sub2api_frame, "管理 Token/API Key", self.sub2api_key_var, show="•")
-        auth = ttk.Combobox(sub2api_frame, textvariable=self.sub2api_auth_mode_var, values=["auto", "api_key", "password"], state="readonly")
-        auth.pack(fill=tk.X, pady=6)
+        self._add_labeled_entry(sub2api_frame, "管理员 API Key", self.sub2api_key_var, show="•")
         self._add_labeled_entry(sub2api_frame, "Group IDs", self.sub2api_group_ids_var)
-        self._add_labeled_entry(sub2api_frame, "管理邮箱", self.sub2api_admin_email_var)
-        self._add_labeled_entry(sub2api_frame, "管理密码", self.sub2api_admin_password_var, show="*")
+        ttk.Label(
+            sub2api_frame,
+            text="Sub2API 管理接口只需要管理员 API Key，不需要管理员邮箱和密码。",
+            style="CardSubtle.TLabel",
+            wraplength=700,
+        ).pack(fill=tk.X, pady=(4, 8))
         ttk.Button(sub2api_frame, text="Sub2API 设置（连接 / 上传 / 自动维护）", command=self.open_sub2api_upload_settings, style="Primary.TButton").pack(fill=tk.X, pady=12)
         ttk.Button(sub2api_frame, text="保存设置", command=self.save_settings).pack(anchor=tk.E)
 

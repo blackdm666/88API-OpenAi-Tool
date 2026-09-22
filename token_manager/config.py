@@ -85,6 +85,7 @@ def default_config() -> dict[str, Any]:
         "auto_refresh_threshold_seconds": DEFAULT_AUTO_REFRESH_THRESHOLD,
         "organize_tokens_by_plan": True,
         "http_proxy": "",
+        "auth_proxy": "",
         "open_browser_on_auto_auth": True,
         "auto_auth_timeout_seconds": 300,
         "oauth": {
@@ -99,7 +100,6 @@ def default_config() -> dict[str, Any]:
                 "api_url": "",
                 "api_key": "",
                 "group_ids": DEFAULT_SUB2API_GROUP_IDS,
-                "auth_mode": "auto",
                 "concurrency": 10,
                 "priority": 1,
                 "rate_multiplier": 1,
@@ -113,11 +113,6 @@ def default_config() -> dict[str, Any]:
                 "recovery_test_enabled": True,
                 "recovery_test_model": "gpt-5.5",
                 "default_list_group_ids": "2",
-                "admin_email": "",
-                "admin_password": "",
-                "access_token": "",
-                "refresh_token": "",
-                "token_expires_at": 0,
             },
         },
     }
@@ -135,12 +130,26 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
 
 def _migrate_legacy_config(raw: dict[str, Any]) -> dict[str, Any]:
     migrated = deepcopy(raw or {})
+    # The cloud update endpoint is first-party and intentionally not user
+    # editable. Remove the old configurable field from migrated settings.
+    migrated.pop("update_manifest_url", None)
     if migrated.get("custom_scan_root") and not migrated.get("tokens_dir"):
         root = Path(str(migrated["custom_scan_root"])).expanduser()
         migrated["tokens_dir"] = str(root if root.name.lower() == "tokens" else root / "tokens")
     migrated["tokens_dir"] = _safe_token_directory(migrated.get("tokens_dir"))
     migrated["outputs_dir"] = _safe_output_directory(migrated.get("outputs_dir"))
-    (migrated.get("integrations") or {}).pop("cpa", None)
+    integrations = migrated.get("integrations") or {}
+    integrations.pop("cpa", None)
+    sub2api = integrations.get("sub2api") or {}
+    for key in (
+        "auth_mode",
+        "admin_email",
+        "admin_password",
+        "access_token",
+        "refresh_token",
+        "token_expires_at",
+    ):
+        sub2api.pop(key, None)
     return migrated
 
 

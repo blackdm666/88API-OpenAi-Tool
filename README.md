@@ -6,7 +6,7 @@
   <p>一个面向多账号运维场景的 OpenAI Token 管理工具</p>
 
   <p>
-    <img src="https://img.shields.io/badge/version-2.2.0--88api.2-2563eb?style=for-the-badge" alt="version">
+    <img src="https://img.shields.io/badge/version-2.3.4-2563eb?style=for-the-badge" alt="version">
     <img src="https://img.shields.io/badge/python-3.11+-1f6feb?style=for-the-badge" alt="python">
     <img src="https://img.shields.io/badge/gui-tkinter-c47a22?style=for-the-badge" alt="gui">
     <img src="https://img.shields.io/badge/auth-protocol%20%7C%20browser-111827?style=for-the-badge" alt="auth">
@@ -27,7 +27,7 @@
 
 > 这不是单纯的 token 存储器。
 >
-> 它把本地账号池、批量刷新、手动授权、2FA 批量授权、Sub2API 远端管理、格式互转、导出整理和日志追踪放到了一套 GUI 里。
+> 它把本地账号池、批量刷新、手动授权、2FA 批量授权、Sub2API 远端管理、速刷号购买入口、导出整理和日志追踪放到了一套 GUI 里。
 
 ## 预览
 
@@ -66,6 +66,7 @@
 | 2FA 协议链 | 纯协议批量授权，速度快，适合大量账号并发 |
 | 2FA 浏览器链 | 真实浏览器批量授权，更贴近真实页面环境 |
 | Sub2API 管理 | 远端账号池管理、状态筛选、失效记录清理 |
+| 速刷号购买 | 从主界面打开固定的速刷号购买页面；本地账号和凭据不会上传 |
 | 转换与导出 | Sub2API 聚合导出，支持文件和剪贴板回导 |
 | 链路监听 | Flow Probe Studio 和登录监听脚本，用来抓真实请求链 |
 
@@ -181,7 +182,7 @@ python build.py --clean --name 88API-号池自动维护工具 --entry-point main
 <details>
   <summary><strong>Sub2API 提示 Invalid admin API key</strong></summary>
   <br>
-  这是远端鉴权失败，通常是管理 Token 或 API Key 填错了，不是普通账号密码问题。
+  当前版本只使用管理员 API Key。请在 Sub2API 设置中填写有效的管理员 API Key；不再使用管理员邮箱、密码或旧登录态。
 </details>
 
 <details>
